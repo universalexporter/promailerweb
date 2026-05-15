@@ -2,6 +2,7 @@
 
 import { useRef } from 'react'
 import { useScrollReveal } from '@/hooks/useScrollReveal'
+import Link from 'next/link' // Added Link import
 
 export default function LaunchPad() {
   const ref = useRef<HTMLElement>(null!)
@@ -82,7 +83,8 @@ export default function LaunchPad() {
               Download the Desktop App
             </button>
 
-            <button style={{
+            {/* Changed to Link routing to /dashboard */}
+            <Link href="/dashboard" style={{
               display:       'flex', alignItems:'center', gap:'9px',
               padding:       'clamp(13px,1.5vw,17px) clamp(28px,3.5vw,44px)',
               borderRadius:  '14px',
@@ -95,13 +97,14 @@ export default function LaunchPad() {
               transition:    'transform 0.2s ease, box-shadow 0.2s ease',
               whiteSpace:    'nowrap' as const,
               letterSpacing: '0.01em',
+              textDecoration: 'none' // Added to prevent default link underline
             }}
             onMouseEnter={e => { const el=e.currentTarget as HTMLElement; el.style.transform='translateY(-2px)'; el.style.boxShadow='0 0 56px rgba(16,185,129,0.6), 0 6px 26px rgba(0,0,0,0.5)' }}
             onMouseLeave={e => { const el=e.currentTarget as HTMLElement; el.style.transform='translateY(0)'; el.style.boxShadow='0 0 28px rgba(16,185,129,0.45), 0 4px 22px rgba(0,0,0,0.45)' }}
             >
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
               Fund Your Account
-            </button>
+            </Link>
           </div>
         </div>
 

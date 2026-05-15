@@ -1,7 +1,6 @@
 'use client'
 
 import { useRef, useState, useEffect } from 'react'
-import { useScrollReveal } from '@/hooks/useScrollReveal'
 
 type MailEvent = {
   id:        string
@@ -90,6 +89,8 @@ function LiveTerminal() {
         border:       `1px solid ${running ? 'rgba(16,185,129,0.38)' : 'rgba(16,185,129,0.18)'}`,
         background:   '#020109',
         transition:   'border-color 0.4s',
+        // Added a subtle drop shadow to pop against the background
+        boxShadow:    '0 20px 50px rgba(0,0,0,0.5)',
       }}
     >
       {/* Window chrome */}
@@ -199,26 +200,53 @@ const FEATURES = [
 
 // ─── Main section ─────────────────────────────────────────────
 export default function LedgerSection() {
-  const ref = useRef<HTMLElement>(null!)
-  useScrollReveal(ref)
+  const sectionRef = useRef<HTMLElement>(null)
+  const [scrollProgress, setScrollProgress] = useState(0)
+
+  // Custom High-End Scroll Interpolation Engine
+  useEffect(() => {
+    const handleScroll = () => {
+      if (!sectionRef.current) return
+      
+      const rect = sectionRef.current.getBoundingClientRect()
+      const viewportCenter = window.innerHeight / 2
+      const sectionCenter = rect.top + rect.height / 2
+      
+      const distanceToCenter = Math.abs(viewportCenter - sectionCenter)
+      const maxDistance = window.innerHeight * 0.75 
+
+      let rawProgress = 1 - (distanceToCenter / maxDistance)
+      rawProgress = Math.max(0, Math.min(1, rawProgress))
+
+      // Smooth step easing
+      const smoothProgress = rawProgress * rawProgress * (3 - 2 * rawProgress)
+      
+      setScrollProgress(smoothProgress)
+    }
+
+    window.addEventListener('scroll', handleScroll, { passive: true })
+    handleScroll() 
+
+    return () => window.removeEventListener('scroll', handleScroll)
+  }, [])
 
   return (
     <section
-      ref={ref}
+      ref={sectionRef}
       id="ledger"
       style={{
         position: 'relative',
-        // KEY FIX: lighter background so 3D scene bleeds through more
-        // was rgba(4,3,10,0.97) — now 0.88 so the globe is visible
+        // Background kept exactly as requested
         background: 'linear-gradient(135deg, rgba(4,3,10,0.88) 0%, rgba(2,8,6,0.85) 100%)',
         borderTop:    '1px solid rgba(16,185,129,0.15)',
         borderBottom: '1px solid rgba(16,185,129,0.10)',
+        overflow: 'hidden',
       }}
     >
       {/* Green left accent */}
       <div style={{ position:'absolute', left:0, top:0, bottom:0, width:'3px', background:'linear-gradient(to bottom, transparent, #10b981, transparent)', pointerEvents:'none' }} />
 
-      {/* Subtle right-side glow so 3D bleeds in — kept faint */}
+      {/* Subtle right-side glow */}
       <div style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', width:'45%', height:'70%', background:'radial-gradient(ellipse at right, rgba(16,185,129,0.04) 0%, transparent 65%)', pointerEvents:'none' }} />
 
       <div
@@ -231,23 +259,27 @@ export default function LedgerSection() {
           gridTemplateColumns: '1fr 1fr',
           gap:      'clamp(28px, 5vw, 72px)',
           alignItems: 'start',
+          perspective: '1200px', // Adds 3D space for the Terminal swing
         }}
       >
-        {/* ── LEFT: Copy ─────────────────────────────── */}
-        <div data-reveal-left>
+        {/* ── LEFT: Copy (Slide & Subtle Scale-Up) ─────────────────────────────── */}
+        <div style={{
+          opacity: scrollProgress,
+          transform: `translateX(${(1 - scrollProgress) * -100}px) scale(${0.95 + scrollProgress * 0.05})`,
+          transition: 'transform 0.1s ease-out, opacity 0.1s ease-out',
+          willChange: 'transform, opacity'
+        }}>
           {/* Label */}
           <div style={{ display:'flex', alignItems:'center', gap:'10px', fontSize:'11px', fontFamily:'Syne,sans-serif', fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase' as const, color:'#10b981', marginBottom:'18px' }}>
             <span style={{ width:'26px', height:'1px', background:'linear-gradient(to right,#10b981,transparent)', display:'inline-block' }} />
             Virtual Ledger
           </div>
 
-          {/* H2 — smaller clamp so it doesn't overflow */}
           <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, color:'#ffffff', lineHeight:1.1, letterSpacing:'-0.04em', marginBottom:'18px', fontSize:'clamp(24px, 3vw, 46px)' }}>
             Pay for exactly<br />what you send.<br />
             <span style={{ color:'#10b981', textShadow:'0 0 28px rgba(16,185,129,0.5)' }}>Not a byte more.</span>
           </h2>
 
-          {/* Body copy — smaller clamp */}
           <p style={{ fontFamily:'DM Sans,sans-serif', fontWeight:300, lineHeight:1.76, color:'#9a90b0', marginBottom:'10px', fontSize:'clamp(12.5px, 1.2vw, 15px)' }}>
             Deposit funds once via Stripe or crypto on the secure web portal. Your balance mirrors instantly inside the Desktop App. Every email micro-deducts in real time—no rounding, no minimums, no monthly lock-in.
           </p>
@@ -255,43 +287,54 @@ export default function LedgerSection() {
             Run 10,000 or 10,000,000. When you stop sending, costs stop. The only honest pricing model in bulk email.
           </p>
 
-          {/* Feature list */}
+          {/* Feature list with unique slide-in-from-left stagger */}
           <ul style={{ listStyle:'none', display:'flex', flexDirection:'column' as const, gap:'9px' }}>
-            {FEATURES.map((f, i) => (
-              <li
-                key={f.title}
-                data-stagger={i}
-                style={{
-                  display:      'flex',
-                  alignItems:   'flex-start',
-                  gap:          '11px',
-                  padding:      'clamp(10px, 1.1vw, 14px) clamp(12px, 1.3vw, 16px)',
-                  borderRadius: '12px',
-                  background:   f.green ? 'rgba(16,185,129,0.055)' : 'rgba(108,59,156,0.065)',
-                  border:       `1px solid ${f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.16)'}`,
-                }}
-              >
-                <div style={{ width:'33px', height:'33px', flexShrink:0, borderRadius:'9px', background: f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.20)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px' }}>
-                  {f.icon}
-                </div>
-                <div>
-                  <div style={{ fontSize:'12.5px', fontFamily:'Syne,sans-serif', fontWeight:600, color:'#ffffff', marginBottom:'2px' }}>{f.title}</div>
-                  <div style={{ fontSize:'11.5px', fontFamily:'DM Sans,sans-serif', color:'#7a7090', lineHeight:1.6 }}>{f.body}</div>
-                </div>
-              </li>
-            ))}
+            {FEATURES.map((f, i) => {
+              const itemProgress = Math.max(0, Math.min(1, scrollProgress * 1.3 - (i * 0.15)))
+              return (
+                <li
+                  key={f.title}
+                  style={{
+                    display:      'flex',
+                    alignItems:   'flex-start',
+                    gap:          '11px',
+                    padding:      'clamp(10px, 1.1vw, 14px) clamp(12px, 1.3vw, 16px)',
+                    borderRadius: '12px',
+                    background:   f.green ? 'rgba(16,185,129,0.055)' : 'rgba(108,59,156,0.065)',
+                    border:       `1px solid ${f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.16)'}`,
+                    opacity: itemProgress,
+                    transform: `translateX(${(1 - itemProgress) * -40}px)`,
+                    transition: 'transform 0.1s ease-out, opacity 0.1s ease-out',
+                    willChange: 'transform, opacity'
+                  }}
+                >
+                  <div style={{ width:'33px', height:'33px', flexShrink:0, borderRadius:'9px', background: f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.20)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px' }}>
+                    {f.icon}
+                  </div>
+                  <div>
+                    <div style={{ fontSize:'12.5px', fontFamily:'Syne,sans-serif', fontWeight:600, color:'#ffffff', marginBottom:'2px' }}>{f.title}</div>
+                    <div style={{ fontSize:'11.5px', fontFamily:'DM Sans,sans-serif', color:'#7a7090', lineHeight:1.6 }}>{f.body}</div>
+                  </div>
+                </li>
+              )
+            })}
           </ul>
         </div>
 
-        {/* ── RIGHT: Terminal ─────────────────────────── */}
-        <div data-reveal-right>
+        {/* ── RIGHT: Terminal (Slide + 3D Perspective Swing) ─────────────────────────── */}
+        <div style={{
+          opacity: scrollProgress,
+          transform: `translateX(${(1 - scrollProgress) * 120}px) rotateY(${(1 - scrollProgress) * 20}deg) scale(${0.9 + scrollProgress * 0.1})`,
+          transition: 'transform 0.1s ease-out, opacity 0.1s ease-out',
+          willChange: 'transform, opacity',
+          transformOrigin: 'left center'
+        }}>
           <LiveTerminal />
         </div>
       </div>
 
       {/* ── ALL RESPONSIVE STYLES ──────────────────────── */}
       <style>{`
-        /* Terminal text sizes — scale with viewport */
         .term-stat-val  { font-size: clamp(12px, 1.3vw, 15px); }
         .term-btn-start, .term-btn-stop { font-size: clamp(10.5px, 1vw, 12px); padding: clamp(6px,0.8vw,8px) 8px; }
         .term-btn-reset { font-size: clamp(10.5px, 1vw, 12px); padding: clamp(6px,0.8vw,8px) clamp(8px,1vw,14px); }
@@ -304,7 +347,6 @@ export default function LedgerSection() {
         .term-foot-l    { font-size: clamp(8.5px, 0.8vw, 10.5px); }
         .term-foot-r    { font-size: clamp(8.5px, 0.8vw, 10.5px); }
 
-        /* ── TABLET ≤900px ─────────────── */
         @media (max-width: 900px) {
           .ledger-grid {
             padding: 60px 24px !important;
@@ -313,18 +355,16 @@ export default function LedgerSection() {
           .term-status { display: none !important; }
         }
 
-        /* ── MOBILE ≤680px ─────────────── */
         @media (max-width: 680px) {
           .ledger-grid {
             grid-template-columns: 1fr !important;
             padding: 48px 16px !important;
             gap:     24px !important;
+            perspective: none !important; /* Disable 3D swing on mobile to prevent overflow */
           }
-          /* Terminal first on mobile */
           .ledger-grid > div:first-child { order: 2; }
           .ledger-grid > div:last-child  { order: 1; }
 
-          /* Compact terminal on mobile */
           .terminal-wrap { border-radius: 12px !important; }
           .term-stream   { max-height: 150px !important; }
           .term-row      { font-size: 9.5px !important; padding: 3px 6px !important; }
@@ -334,7 +374,6 @@ export default function LedgerSection() {
           .term-foot-l   { display: none; }
         }
 
-        /* ── VERY SMALL ≤400px ─────────── */
         @media (max-width: 400px) {
           .ledger-grid   { padding: 40px 13px !important; }
           .terminal-wrap { border-radius: 10px !important; }

@@ -2,6 +2,10 @@ import type { Metadata } from 'next'
 import { Syne, DM_Sans } from 'next/font/google'
 import './globals.css'
 
+// IMPORTANT: Import your global UI components!
+import CustomCursor from '@/components/ui/CustomCursor' 
+import SmoothScroll from '@/components/SmoothScroll' 
+
 const syne = Syne({
   subsets: ['latin'],
   weight: ['400', '500', '600', '700', '800'],
@@ -32,7 +36,14 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html lang="en" className={`${syne.variable} ${dmSans.variable}`}>
       <body className="bg-[#04030a] text-[#e8e4f0] font-body overflow-x-hidden antialiased">
-        {children}
+        {/* We wrap the entire app in your smooth scroller */}
+        <SmoothScroll>
+          {/* Global custom cursor injection */}
+          <CustomCursor />
+          
+          {/* This renders the actual pages (Landing, Login, Dashboard) */}
+          {children}
+        </SmoothScroll>
       </body>
     </html>
   )
