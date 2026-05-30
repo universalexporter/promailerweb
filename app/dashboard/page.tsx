@@ -1,96 +1,373 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
 import { createClient } from '@supabase/supabase-js'
-
-// Import your interactive Guide component
 import GuideModal from '@/components/GuideModal'
+import DomainManager from '@/components/DomainManager'
 
-// Initialize Supabase
+// ─── 1. CORE SYSTEM INITIALIZATION ──────────────────────────────────────────
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// 3D Neural Brain Engine
 const NeuralBrainScene = dynamic(() => import('@/components/3d/NeuralBrainScene'), { ssr: false })
 
+// ─── 2. ENTERPRISE PRICING & TIERS ──────────────────────────────────────────
+const TIERS = [
+  { 
+    id: 'starter', 
+    name: 'Starter Plan', 
+    price: 250,
+    volume: '20,000 Emails',
+    limit: 20000,
+    features: ['20k Monthly Limit', 'Standard API Access', 'Overage: 0.006 USDT/email']
+  },
+  { 
+    id: 'pro', 
+    name: 'Pro Plan', 
+    price: 600,
+    volume: '100,000 Emails',
+    limit: 100000,
+    features: ['100k Monthly Limit', 'High-Speed Routing', 'Dedicated Account Manager']
+  },
+  { 
+    id: 'enterprise', 
+    name: 'Scale Plan', 
+    price: 1500,
+    volume: '500,000 Emails',
+    limit: 500000,
+    features: ['500k Monthly Limit', 'Custom Dedicated IPs', 'Priority 24/7 Support']
+  }
+]
+
+// Overage Cost calculation: 3x Profit Markup sets client cost to 0.006/email.
+const OVERAGE_COST_PER_EMAIL = 0.006 
+
+// ─── 3. ICONS LIBRARY (SVG) ─────────────────────────────────────────────────
+const Icons = {
+  ChatBubble: () => (
+    <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 10h.01M12 10h.01M16 10h.01M9 16H5a2 2 0 01-2-2V6a2 2 0 012-2h14a2 2 0 012 2v8a2 2 0 01-2 2h-5l-5 5v-5z" />
+    </svg>
+  ),
+  Close: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+    </svg>
+  ),
+  Paperclip: () => (
+    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" />
+    </svg>
+  ),
+  Send: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+    </svg>
+  ),
+  Bolt: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 10V3L4 14h7v7l9-11h-7z" />
+    </svg>
+  ),
+  Terminal: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 9l3 3-3 3m5 0h3M5 20h14a2 2 0 002-2V6a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+    </svg>
+  ),
+  Windows: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/>
+    </svg>
+  ),
+  Apple: () => (
+    <svg className="w-5 h-5" fill="currentColor" viewBox="0 0 24 24">
+      <path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.189 14.86c-.347.05-1.503-.687-2.748-.687-1.391 0-2.457.77-3.693.77-1.637 0-3.37-1.28-4.444-2.846-1.583-2.316-2.073-5.326-.818-7.25 1.002-1.53 2.656-2.518 4.417-2.518 1.488 0 2.593.687 3.655.687 1.026 0 2.308-.748 3.864-.748.593 0 2.298.064 3.394 1.139-3.082 1.62-2.564 5.679.526 6.945-.63 1.624-1.666 3.094-3.153 4.508zM14.545 4.5c-.752 1.025-2.091 1.64-3.12 1.554.168-1.218.824-2.375 1.627-3.094 1.008-.9 2.264-1.442 3.235-1.42-.164 1.258-.87 2.102-1.742 2.96z"/>
+    </svg>
+  ),
+  Copy: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+    </svg>
+  ),
+  Check: () => (
+    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" />
+    </svg>
+  )
+}
+
+// ─── 4. MAIN DASHBOARD COMPONENT ────────────────────────────────────────────
 export default function DashboardPage() {
   const router = useRouter()
   
-  // State
+  // Base State
+  const [userId, setUserId] = useState<string | null>(null)
   const [userEmail, setUserEmail] = useState<string | null>('Loading...')
   const [isLoggingOut, setIsLoggingOut] = useState(false)
-  const [showApiKey, setShowApiKey] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
   
-  // ── ENTERPRISE ACTIVATION STATE ──
-  // For testing, we set this to false so you can see the $50 lock.
-  const [isActivated, setIsActivated] = useState(false)
+  // Dashboard Data State
+  const [walletBalance, setWalletBalance] = useState<number>(0.00) 
+  const [apiKey, setApiKey] = useState<string>('Loading...')
+  const [isAccountActive, setIsAccountActive] = useState<boolean>(false) 
   
-  // ── NEW PRICING MATH ──
-  // $20 per 3,000 emails = ~$0.00666 per email
-  const [emailVolume, setEmailVolume] = useState(3000)
-  const depositAmount = ((emailVolume / 3000) * 20).toFixed(2)
+  // Active Plan State
+  const [activePlanId, setActivePlanId] = useState<string | null>(null)
+  const [daysRemaining, setDaysRemaining] = useState<number>(0)
+  const [emailsSent, setEmailsSent] = useState<number>(0)
+  
+  // Checkout & Upgrade State
+  const [depositAmount, setDepositAmount] = useState<number>(50) // Overage Minimum
+  const [selectedTier, setSelectedTier] = useState<string>('pro')
+  const [isProcessingCheckout, setIsProcessingCheckout] = useState(false)
+  const [isUpgrading, setIsUpgrading] = useState(false)
+  const [copiedKey, setCopiedKey] = useState(false)
 
-  // Authentication Check
+  // ── SUPPORT CHAT STATE ──
+  const [isChatOpen, setIsChatOpen] = useState(false)
+  const [chatMessages, setChatMessages] = useState<any[]>([])
+  const [chatInput, setChatInput] = useState('')
+  const [chatTicketId, setChatTicketId] = useState<string | null>(null)
+  const [isChatUploading, setIsChatUploading] = useState(false)
+  const chatEndRef = useRef<HTMLDivElement>(null)
+
+  // Hardware Audio
+  const tickSound = typeof window !== 'undefined' ? new Audio('/tick.mp3') : null
+
+  // ─── 5. INITIALIZATION & DATA FETCHING ────────────────────────────────────
   useEffect(() => {
-    const checkUser = async () => {
+    const checkUserAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
         router.push('/login')
-      } else {
-        setUserEmail(session.user.email ?? 'Unknown User')
+        return
+      }
+
+      setUserId(session.user.id)
+      setUserEmail(session.user.email ?? 'Unknown User')
+
+      try {
+        const [profileRes, walletRes] = await Promise.all([
+          supabase.from('profiles').select('*').eq('id', session.user.id).single(),
+          supabase.from('wallets').select('balance').eq('user_id', session.user.id).single()
+        ])
+
+        if (profileRes.data) {
+          setApiKey(profileRes.data.api_key)
+          
+          // Fetch Real Plan Data (Fallback to 'starter' visually if missing but wallet > 0)
+          const dbPlan = profileRes.data.active_plan_id
+          const dbExpires = profileRes.data.plan_expires_at
+          
+          if (dbPlan || Number(walletRes.data?.balance) > 0) {
+            setIsAccountActive(true)
+            setActivePlanId(dbPlan || 'starter') // Fallback to starter for visual UI
+            
+            // Calculate Days Remaining
+            if (dbExpires) {
+              const diffTime = Math.abs(new Date(dbExpires).getTime() - new Date().getTime());
+              setDaysRemaining(Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+            } else {
+              setDaysRemaining(30) // Fallback UI state
+            }
+
+            setEmailsSent(profileRes.data.emails_sent || 0)
+          }
+        }
+
+        if (walletRes.data) {
+          setWalletBalance(Number(walletRes.data.balance))
+        }
+
+      } catch (error) {
+        console.error("Error fetching live user data:", error)
+      } finally {
         setIsCheckingAuth(false) 
       }
     }
-    checkUser()
+    
+    checkUserAndFetchData()
   }, [router])
 
+  // ─── 6. SUPPORT CHAT ENGINE ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!userId) return
+
+    const initializeChat = async () => {
+      let { data: ticket } = await supabase.from('support_tickets').select('id').eq('user_id', userId).single()
+      
+      if (!ticket) {
+        const { data: newTicket } = await supabase.from('support_tickets').insert({ user_id: userId }).select().single()
+        ticket = newTicket
+      }
+      
+      if (!ticket) return
+      
+      setChatTicketId(ticket.id)
+
+      const { data: msgs } = await supabase.from('support_messages').select('*').eq('ticket_id', ticket.id).order('created_at', { ascending: true })
+      if (msgs) setChatMessages(msgs)
+    }
+
+    initializeChat()
+
+    const channel = supabase
+      .channel('client_support_chat')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, (payload) => {
+        const newMsg = payload.new
+        setChatMessages((prev) => [...prev, newMsg])
+        
+        // Play audio if message is from Admin
+        if (newMsg.sender_id !== userId) {
+          tickSound?.play().catch(e => console.log('Audio blocked', e))
+          if (!isChatOpen) setIsChatOpen(true)
+        }
+      })
+      .subscribe()
+
+    return () => { supabase.removeChannel(channel) }
+  }, [userId, isChatOpen])
+
+  useEffect(() => {
+    if (isChatOpen) {
+      chatEndRef.current?.scrollIntoView({ behavior: 'smooth' })
+    }
+  }, [chatMessages, isChatOpen])
+
+  const handleSendChatMessage = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!chatInput.trim() || !chatTicketId || !userId) return
+
+    const msgToSend = chatInput
+    setChatInput('') 
+
+    await supabase.from('support_messages').insert({
+      ticket_id: chatTicketId, sender_id: userId, message: msgToSend
+    })
+  }
+
+  const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file || !userId || !chatTicketId) return
+
+    setIsChatUploading(true)
+    const fileExt = file.name.split('.').pop()
+    const fileName = `${userId}-${Math.random()}.${fileExt}`
+
+    try {
+      const { error: uploadError } = await supabase.storage.from('chat_attachments').upload(fileName, file)
+      if (uploadError) throw uploadError
+
+      const { data: { publicUrl } } = supabase.storage.from('chat_attachments').getPublicUrl(fileName)
+
+      await supabase.from('support_messages').insert({
+        ticket_id: chatTicketId, sender_id: userId, image_url: publicUrl
+      })
+    } catch (error) {
+      alert('Failed to securely upload attachment.')
+    } finally {
+      setIsChatUploading(false)
+    }
+  }
+
+  // ─── 7. DASHBOARD ACTIONS & HELPERS ───────────────────────────────────────
   const handleSignOut = async () => {
     setIsLoggingOut(true)
     await supabase.auth.signOut()
     router.push('/login')
   }
 
-  // Gatekeeper
+  const handleCopyApiKey = () => {
+    if (!apiKey || apiKey === 'Loading...') return
+    navigator.clipboard.writeText(apiKey)
+    setCopiedKey(true)
+    setTimeout(() => setCopiedKey(false), 2000)
+  }
+
+  const handleCheckout = async (amount: number, description: string, type: 'activation' | 'topup' | 'upgrade') => {
+    const paymentWindow = window.open('', '_blank')
+    
+    setIsProcessingCheckout(true)
+    try {
+      const response = await fetch('/api/checkout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: amount,
+          description: description,
+          order_id: `${type}_${userEmail}_${Date.now()}`
+        })
+      })
+
+      const data = await response.json()
+
+      if (data.checkout_url && paymentWindow) {
+        paymentWindow.location.href = data.checkout_url
+      } else {
+        if (paymentWindow) paymentWindow.close()
+        alert("Payment gateway routing error. Please contact support.")
+      }
+    } catch (error) {
+      console.error("Checkout failed:", error)
+      if (paymentWindow) paymentWindow.close()
+      alert("Failed to establish secure payment connection.")
+    } finally {
+      setIsProcessingCheckout(false)
+    }
+  }
+
+  // ─── 8. RENDER GUARDS & MATH ──────────────────────────────────────────────
   if (isCheckingAuth) return <div className="min-h-screen bg-[#020106]" />
 
+  const availableOverageEmails = Math.floor(walletBalance / OVERAGE_COST_PER_EMAIL)
+  const isOutOfFunds = isAccountActive && walletBalance <= 0
+
+  // Active Plan Math
+  const currentPlanObj = TIERS.find(t => t.id === activePlanId) || TIERS[0]
+  const isPlanExpired = daysRemaining <= 0
+  const usagePercentage = Math.min(100, (emailsSent / currentPlanObj.limit) * 100)
+
+  // ─── 9. MAIN UI RENDER ────────────────────────────────────────────────────
   return (
     <main className="relative min-h-screen bg-[#020106] text-white font-['DM_Sans',sans-serif] overflow-y-auto selection:bg-[#9b5de5]/30">
       
-      {/* ── 3D BACKGROUND ENGINE ── */}
+      {/* Background Engine */}
       <div className="fixed inset-0 z-0 w-full h-full opacity-30 mix-blend-screen pointer-events-none">
          <NeuralBrainScene />
       </div>
-      
-      {/* Depth Gradient Map */}
       <div className="fixed inset-0 z-10 bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] opacity-40 pointer-events-none" />
 
-      {/* ── DASHBOARD CONTENT ── */}
+      {/* ── CSS INJECTIONS ── */}
+      <style dangerouslySetInnerHTML={{__html: `
+        .pro-scroll::-webkit-scrollbar { width: 4px; }
+        .pro-scroll::-webkit-scrollbar-track { background: transparent; }
+        .pro-scroll::-webkit-scrollbar-thumb { background: rgba(155, 93, 229, 0.3); border-radius: 10px; }
+        .pro-scroll::-webkit-scrollbar-thumb:hover { background: rgba(155, 93, 229, 0.6); }
+      `}} />
+
       <div className="relative z-20 max-w-7xl mx-auto p-6 md:p-12 animate-[fadeUp_0.8s_ease-out]">
         
-        {/* Header */}
+        {/* ── HEADER ── */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-12 gap-6 border-b border-white/[0.04] pb-8 relative">
-          {/* Subtle top ambient glow */}
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-[#9b5de5]/50 to-transparent" />
           
           <div>
-            <h1 className="font-['Syne',sans-serif] text-4xl font-extrabold tracking-tighter mb-2 text-transparent bg-clip-text bg-gradient-to-b from-white via-white to-white/40 drop-shadow-lg">
-              Command Center
+            <h1 className="font-['Syne',sans-serif] text-3xl md:text-4xl font-extrabold tracking-tight mb-2 text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
+              Client Portal
             </h1>
             <div className="flex flex-wrap items-center gap-4">
-              <p className="text-[#8a80a0] text-sm flex items-center gap-2 font-medium tracking-wide">
+              <p className="text-[#8a80a0] text-xs md:text-sm flex items-center gap-2 font-medium tracking-wide">
                 <span className="w-2 h-2 rounded-full bg-[#10b981] animate-pulse shadow-[0_0_10px_#10b981]" />
                 {userEmail}
               </p>
-              {/* Account Status Badge */}
               <div className="flex items-center">
-                <span className={`text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border backdrop-blur-md shadow-inner transition-all duration-500 ${isActivated ? 'border-[#10b981]/40 text-[#10b981] bg-[#10b981]/10 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-red-500/40 text-red-400 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.15)]'}`}>
-                  {isActivated ? 'Node Active' : 'Activation Required'}
+                <span className={`text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border backdrop-blur-md shadow-inner transition-all duration-500 ${isAccountActive && !isPlanExpired ? 'border-[#10b981]/40 text-[#10b981] bg-[#10b981]/10 shadow-[0_0_15px_rgba(16,185,129,0.15)]' : 'border-red-500/40 text-red-400 bg-red-500/10 shadow-[0_0_15px_rgba(239,68,68,0.15)]'}`}>
+                  {isAccountActive && !isPlanExpired ? 'Active Plan' : 'Plan Inactive'}
                 </span>
               </div>
             </div>
@@ -99,204 +376,428 @@ export default function DashboardPage() {
           <button 
             onClick={handleSignOut}
             disabled={isLoggingOut}
-            className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all border border-white/[0.08] px-6 py-3 rounded-xl bg-[#070512]/80 hover:bg-white/[0.05] disabled:opacity-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_15px_rgba(0,0,0,0.5)]"
+            className="text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all border border-white/[0.08] px-6 py-3 rounded-xl bg-[#070512]/80 hover:bg-white/[0.05] disabled:opacity-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_15px_rgba(0,0,0,0.5)]"
           >
-            {isLoggingOut ? 'Terminating...' : 'Sign Out'}
+            {isLoggingOut ? 'Signing out...' : 'Sign Out'}
           </button>
         </header>
 
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10 pb-20">
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-10">
           
-          {/* ── LEFT COLUMN: Funding & Balance ── */}
+          {/* ── LEFT COLUMN: PAY AS YOU SEND (OVERAGE) ── */}
           <div className="lg:col-span-7 space-y-10">
-            
-            <section className="bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 border border-white/[0.08] backdrop-blur-[50px] rounded-[2.5rem] p-8 sm:p-12 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.1)] relative overflow-hidden group hover:border-white/[0.12] transition-colors duration-500">
+            <section className={`bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 border ${isOutOfFunds ? 'border-red-500/30' : 'border-white/[0.08]'} backdrop-blur-[50px] rounded-[2.5rem] p-8 sm:p-12 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.1)] relative overflow-hidden transition-colors duration-500`}>
+              <div className={`absolute -top-32 -right-32 w-96 h-96 ${isOutOfFunds ? 'bg-red-500/10' : 'bg-[#9b5de5]/10'} blur-[100px] rounded-full pointer-events-none transition-all duration-700`} />
               
-              {/* Internal volumetric light */}
-              <div className="absolute -top-32 -right-32 w-96 h-96 bg-[#9b5de5]/10 blur-[100px] rounded-full pointer-events-none group-hover:bg-[#9b5de5]/20 transition-all duration-700" />
-              
-              <h2 className="font-['Syne',sans-serif] text-[#8a80a0] font-bold text-[11px] uppercase tracking-[0.2em] mb-3 relative z-10">Available Balance</h2>
-              <div className="text-6xl sm:text-7xl font-extrabold tracking-tighter mb-4 font-['Syne',sans-serif] text-transparent bg-clip-text bg-gradient-to-b from-white to-[#8a80a0] relative z-10">
-                $0.00
+              <div className="flex justify-between items-start mb-4 relative z-10">
+                <h2 className="font-['Syne',sans-serif] text-[#8a80a0] font-bold text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
+                  <Icons.Bolt /> Overage Balance (Pay-As-You-Send)
+                </h2>
+                
+                {isOutOfFunds && (
+                  <div className="text-[10px] font-bold text-red-400 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-lg animate-pulse shadow-[0_0_15px_rgba(239,68,68,0.2)]">
+                    ⚠️ DEPOSIT OVERAGE FUNDS TO CONTINUE SENDING
+                  </div>
+                )}
               </div>
-              <p className="text-sm text-[#10b981] font-medium mb-10 relative z-10 flex items-center gap-2">
-                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" /></svg>
-                Ready to dispatch 0 emails.
-              </p>
+
+              {/* Classy, Refined Sized Numbers */}
+              <div className={`text-4xl sm:text-5xl font-extrabold tracking-tight mb-6 font-mono ${isOutOfFunds ? 'text-red-400' : 'text-white'} relative z-10 flex items-baseline gap-3 drop-shadow-md`}>
+                {walletBalance.toFixed(2)} <span className={`text-lg sm:text-xl font-['DM_Sans',sans-serif] ${isOutOfFunds ? 'text-red-500' : 'text-[#8a80a0]'}`}>USDT</span>
+              </div>
+              
+              <div className="bg-black/40 border border-white/[0.05] rounded-xl p-5 mb-10 relative z-10 flex justify-between items-center shadow-inner">
+                <span className="text-[11px] text-[#8a80a0] font-bold uppercase tracking-[0.2em]">Est. Overage Capacity:</span>
+                <span className={`text-sm font-mono font-bold tracking-wider ${isOutOfFunds ? 'text-red-400' : 'text-[#10b981]'}`}>
+                  ≈ {availableOverageEmails.toLocaleString()} extra emails
+                </span>
+              </div>
 
               {/* Deposit Interface */}
-              <div className={`bg-black/60 border border-white/[0.04] rounded-3xl p-8 sm:p-10 shadow-[inset_0_2px_20px_rgba(0,0,0,0.8)] relative z-10 transition-all duration-500 ${!isActivated ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
-                
+              <div className={`bg-black/60 border border-white/[0.04] rounded-3xl p-8 sm:p-10 shadow-[inset_0_2px_20px_rgba(0,0,0,0.8)] relative z-10 transition-all duration-500 ${!isAccountActive ? 'opacity-40 grayscale pointer-events-none' : ''}`}>
                 <div className="flex justify-between items-end mb-8">
                   <div>
-                    <h3 className="font-['Syne',sans-serif] font-bold text-xl text-white mb-2 tracking-tight">Fund Your Node</h3>
-                    <p className="text-xs text-[#8a80a0] tracking-wide">Pay as you send ($20 per 3k emails).</p>
+                    <h3 className="font-['Syne',sans-serif] font-bold text-xl text-white mb-2 tracking-tight">Add Overage Funds</h3>
+                    <p className="text-xs text-[#8a80a0] tracking-wide">Pre-fund your account for usage beyond your plan limits.</p>
                   </div>
                   <div className="text-right">
-                    <div className="text-3xl font-bold font-['Syne',sans-serif] text-[#9b5de5] drop-shadow-[0_0_15px_rgba(155,93,229,0.4)]">
-                      ${depositAmount}
+                    <div className="text-2xl font-bold font-mono text-[#9b5de5] drop-shadow-[0_0_15px_rgba(155,93,229,0.4)]">
+                      {depositAmount} <span className="text-sm">USDT</span>
                     </div>
-                    <div className="text-[10px] uppercase tracking-[0.2em] text-[#6a6080] mt-1 font-bold">Deposit Amount</div>
                   </div>
                 </div>
 
                 <div className="mb-10">
                   <div className="flex justify-between items-center text-[11px] font-bold text-white mb-5">
-                    <span className="uppercase tracking-widest text-[#8a80a0]">Target Volume</span>
+                    <span className="uppercase tracking-widest text-[#8a80a0]">Est. Capacity</span>
                     <span className="text-[#9b5de5] bg-[#9b5de5]/10 px-4 py-1.5 rounded-lg border border-[#9b5de5]/20 shadow-inner tracking-wider">
-                      {emailVolume.toLocaleString()} emails
+                      + {(depositAmount / OVERAGE_COST_PER_EMAIL).toLocaleString()} emails
                     </span>
                   </div>
                   <div className="relative w-full h-3 bg-[#020106] rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,1)] border border-white/[0.02]">
                     <input 
                       type="range" 
-                      min="3000" 
-                      max="300000" 
-                      step="3000"
-                      value={emailVolume}
-                      onChange={(e) => setEmailVolume(Number(e.target.value))}
+                      min="50" 
+                      max="5000" 
+                      step="50"
+                      value={depositAmount}
+                      onChange={(e) => setDepositAmount(Number(e.target.value))}
                       className="absolute inset-0 w-full h-full appearance-none bg-transparent cursor-pointer [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-6 [&::-webkit-slider-thumb]:h-6 [&::-webkit-slider-thumb]:bg-[#9b5de5] [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:shadow-[0_0_20px_#9b5de5]"
                     />
-                    {/* Visual fill bar for slider */}
                     <div 
                       className="absolute left-0 top-0 h-full bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5] rounded-full pointer-events-none" 
-                      style={{ width: `${((emailVolume - 3000) / (300000 - 3000)) * 100}%` }}
+                      style={{ width: `${((depositAmount - 50) / (5000 - 50)) * 100}%` }}
                     />
                   </div>
                   <div className="flex justify-between text-[10px] text-[#4a4060] mt-4 font-mono font-bold tracking-wider">
-                    <span>MIN: 3k ($20)</span>
-                    <span>MAX: 300k ($2,000)</span>
+                    <span>MIN: 50</span>
+                    <span>MAX: 5,000</span>
                   </div>
                 </div>
 
                 <div className="flex flex-col sm:flex-row items-center justify-between gap-6 border-t border-white/[0.04] pt-8">
-                  <p className="text-[10px] text-[#6a6080] max-w-[280px] leading-relaxed uppercase tracking-wider font-bold">
-                    {!isActivated ? "You must activate your node before adding funds." : "By proceeding, you agree to our TOS. Taxes may apply."}
+                  <p className="text-[10px] text-[#6a6080] max-w-[280px] leading-relaxed uppercase tracking-[0.15em] font-bold">
+                    {!isAccountActive ? "You must choose a primary plan before adding overage funds." : "Overage funds are instantly credited to your sending engine."}
                   </p>
-                  <button className="w-full sm:w-auto relative group overflow-hidden rounded-xl p-[1px]">
+                  
+                  <button 
+                    onClick={() => handleCheckout(depositAmount, 'Overage Balance Top-Up', 'topup')}
+                    disabled={!isAccountActive || isProcessingCheckout}
+                    className={`w-full sm:w-auto relative group overflow-hidden rounded-xl p-[1px] disabled:opacity-50 disabled:cursor-not-allowed ${isOutOfFunds ? 'animate-bounce' : ''}`}
+                  >
                     <span className="absolute inset-0 bg-gradient-to-r from-[#9b5de5] via-[#6c3b9c] to-[#9b5de5] opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
                     <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-12 py-4 transition-all duration-300 group-hover:bg-transparent">
-                      <span className="font-['Syne',sans-serif] font-bold text-white text-xs uppercase tracking-[0.2em]">
-                        Add Funds
+                      <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
+                        {isProcessingCheckout ? 'Generating...' : `Add ${depositAmount} USDT`}
                       </span>
                     </div>
                   </button>
                 </div>
-
               </div>
             </section>
-
           </div>
 
-          {/* ── RIGHT COLUMN: Instructions & API ── */}
+          {/* ── RIGHT COLUMN: PLAN ACTIVATION & API ── */}
           <div className="lg:col-span-5 space-y-10">
-            
-            <section className="bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 border border-white/[0.08] backdrop-blur-[50px] rounded-[2.5rem] p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.1)] relative overflow-hidden">
-              <h2 className="font-['Syne',sans-serif] text-white font-extrabold text-xl mb-4 tracking-tight">System Access</h2>
-              <p className="text-xs text-[#8a80a0] leading-relaxed mb-8 tracking-wide">Your unique API key securely connects your local desktop engine to your cloud balance.</p>
+            <section className="bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 border border-white/[0.08] backdrop-blur-[50px] rounded-[2.5rem] p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.1)] relative overflow-hidden h-full flex flex-col">
               
-              {/* ── HIGH-CLASS ACTIVATION VAULT ── */}
-              {isActivated ? (
-                <div className="bg-black/60 border border-white/[0.06] rounded-2xl p-5 flex justify-between items-center shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)] mb-10 animate-[fadeUp_0.5s_ease-out] relative group overflow-hidden">
-                  <div className="absolute inset-0 bg-gradient-to-r from-[#9b5de5]/0 via-[#9b5de5]/5 to-[#9b5de5]/0 -translate-x-full group-hover:animate-[shimmer_2s_infinite]" />
-                  <div className="flex flex-col relative z-10">
-                    <span className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] mb-1 font-bold">Cryptographic Key</span>
-                    <code className={`font-mono text-sm tracking-widest ${showApiKey ? 'text-[#9b5de5] drop-shadow-[0_0_8px_rgba(155,93,229,0.5)]' : 'text-transparent text-shadow-blur blur-[5px]'}`}>
-                      pk_live_8f92j...4k9x
-                    </code>
+              {/* ── DYNAMIC HEADER ── */}
+              <div className="flex justify-between items-start mb-8">
+                <div>
+                  <h2 className="font-['Syne',sans-serif] text-white font-extrabold text-xl tracking-tight">
+                    {isAccountActive && !isUpgrading ? 'Subscription Data' : 'System Access'}
+                  </h2>
+                  <p className="text-[11px] text-[#8a80a0] leading-relaxed mt-2 tracking-[0.1em] uppercase font-bold">
+                    {isAccountActive && !isUpgrading ? 'Manage your active cloud node.' : 'Select a tier to unlock the network.'}
+                  </p>
+                </div>
+                {isUpgrading && (
+                  <button onClick={() => setIsUpgrading(false)} className="text-[10px] font-bold text-[#8a80a0] hover:text-white uppercase tracking-widest bg-white/5 px-4 py-2 rounded-lg border border-white/10 transition-colors">
+                    Cancel
+                  </button>
+                )}
+              </div>
+              
+              {/* ── VIEW 1: ACTIVE SUBSCRIPTION DASHBOARD ── */}
+              {isAccountActive && !isUpgrading ? (
+                <div className="animate-[fadeUp_0.4s_ease-out] flex-1 flex flex-col">
+                  
+                  {/* Telemetry Card */}
+                  <div className="bg-black/60 border border-[#9b5de5]/20 rounded-2xl p-6 shadow-[inset_0_2px_20px_rgba(155,93,229,0.05),0_10px_30px_rgba(0,0,0,0.5)] mb-8 relative overflow-hidden">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[#9b5de5]/10 rounded-bl-full pointer-events-none"></div>
+                    
+                    <div className="flex justify-between items-start mb-6">
+                      <div>
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">Active Plan</div>
+                        <div className="text-2xl font-bold text-white font-['Syne',sans-serif]">{currentPlanObj.name}</div>
+                      </div>
+                      <div className="text-right">
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">Status</div>
+                        {isPlanExpired ? (
+                          <div className="text-red-400 font-bold text-sm bg-red-500/10 px-3 py-1 rounded border border-red-500/30">Expired</div>
+                        ) : (
+                          <div className="text-white font-mono text-sm bg-[#9b5de5]/20 px-3 py-1 rounded border border-[#9b5de5]/40">{daysRemaining} Days Left</div>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Usage Progress Bar */}
+                    <div className="mb-2 flex justify-between text-[11px] font-bold text-white">
+                      <span className="uppercase tracking-widest text-[#8a80a0]">Monthly Usage</span>
+                      <span className="font-mono text-[#9b5de5]">{emailsSent.toLocaleString()} / {currentPlanObj.limit.toLocaleString()}</span>
+                    </div>
+                    <div className="relative w-full h-2 bg-[#020106] rounded-full shadow-inner border border-white/[0.05] overflow-hidden">
+                      <div 
+                        className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${usagePercentage > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5]'}`}
+                        style={{ width: `${usagePercentage}%` }}
+                      />
+                    </div>
                   </div>
+
+                  {/* API Key Box */}
+                  <div className="bg-black/40 border border-white/[0.06] rounded-2xl p-5 flex flex-col gap-4 shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)] mb-8">
+                    <div className="flex justify-between items-center border-b border-white/[0.05] pb-4">
+                      <span className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold flex items-center gap-2">
+                        <Icons.Terminal /> API Access Token
+                      </span>
+                      <button 
+                        onClick={handleCopyApiKey}
+                        className={`text-[9px] font-bold uppercase tracking-[0.15em] transition-all border px-4 py-2 rounded-lg shadow-sm flex items-center gap-1.5 ${copiedKey ? 'bg-[#10b981]/20 text-[#10b981] border-[#10b981]/40' : 'bg-white/[0.05] text-[#8a80a0] hover:text-white border-white/[0.05] hover:border-white/[0.15]'}`}
+                      >
+                        {copiedKey ? <><Icons.Check /> Copied</> : <><Icons.Copy /> Copy Key</>}
+                      </button>
+                    </div>
+                    <div className="pt-2">
+                      <code className="font-mono text-sm tracking-widest block break-all text-[#9b5de5] drop-shadow-[0_0_8px_rgba(155,93,229,0.3)]">
+                        pk_live_••••••••••••••••••••••••
+                      </code>
+                    </div>
+                  </div>
+
+                  {/* Desktop Software Links */}
+                  <div className="mb-8">
+                    <h4 className="text-xs font-bold text-white mb-3 tracking-wide">Desktop Engine Installation</h4>
+                    <div className="flex flex-col sm:flex-row gap-3">
+                      <button className="flex-1 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] bg-[#9b5de5]/10 hover:bg-[#9b5de5]/20 text-[#9b5de5] hover:text-white py-3 rounded-xl transition-all border border-[#9b5de5]/30">
+                        <Icons.Windows /> Windows
+                      </button>
+                      <button disabled className="flex-1 flex items-center justify-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] bg-black/40 text-[#8a80a0] py-3 rounded-xl border border-white/[0.05] cursor-not-allowed opacity-60">
+                        <Icons.Apple /> Mac OS
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Upgrade Button */}
                   <button 
-                    onClick={() => setShowApiKey(!showApiKey)}
-                    className="relative z-10 text-[10px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all bg-white/[0.05] border border-white/[0.05] hover:border-white/[0.15] px-4 py-2 rounded-lg shadow-sm"
+                    onClick={() => setIsUpgrading(true)}
+                    className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] mt-auto shrink-0"
                   >
-                    {showApiKey ? 'Hide' : 'Reveal'}
+                    <span className="absolute inset-0 bg-gradient-to-r from-white/10 via-white/30 to-white/10 opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                    <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
+                      <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">
+                        Upgrade Plan
+                      </span>
+                    </div>
                   </button>
                 </div>
               ) : (
-                <div className="bg-gradient-to-b from-red-500/10 to-[#020106] border border-red-500/30 rounded-2xl p-8 text-center shadow-[inset_0_2px_30px_rgba(239,68,68,0.15),0_10px_40px_rgba(239,68,68,0.1)] mb-10 relative overflow-hidden group">
-                  {/* Warning scanline effect */}
-                  <div className="absolute inset-0 bg-[url('data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMjAiIGhlaWdodD0iMjAiIHhtbG5zPSJodHRwOi8vd3d3LnczLm9yZy8yMDAwL3N2ZyI+PGNpcmNsZSBjeD0iMSIgY3k9IjEiIHI9IjEiIGZpbGw9InJnYmEoMjU1LDI1NSwyNTUsMC4wNSkiLz48L3N2Zz4=')] opacity-20 pointer-events-none" />
-                  <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-red-500 to-transparent opacity-50" />
-                  
-                  <div className="relative z-10">
-                    <div className="w-14 h-14 mx-auto bg-red-500/10 border border-red-500/20 rounded-2xl flex items-center justify-center mb-5 shadow-[0_0_30px_rgba(239,68,68,0.2)]">
-                      <svg className="w-6 h-6 text-red-500 drop-shadow-[0_0_10px_rgba(239,68,68,0.8)]" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" />
-                      </svg>
-                    </div>
-                    <h3 className="font-['Syne',sans-serif] text-white font-extrabold text-lg mb-3 tracking-tight">Activation Required</h3>
-                    <p className="text-[11px] text-[#8a80a0] mb-8 leading-relaxed font-bold tracking-wide uppercase">
-                      Pay the one-time $50 setup fee to generate your API key and unlock network dispatching.
-                    </p>
-                    <button 
-                      onClick={() => setIsActivated(true)} // TEMPORARY
-                      className="w-full relative group/btn overflow-hidden rounded-xl p-[1px]"
-                    >
-                      <span className="absolute inset-0 bg-gradient-to-r from-red-600 via-red-500 to-red-600 opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
-                      <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
-                        <span className="font-['Syne',sans-serif] font-bold text-white text-xs uppercase tracking-[0.2em]">
-                          Pay $50 Activation Fee
-                        </span>
-                      </div>
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-8 mb-10">
-                <div className="relative pl-12 group">
-                  <div className="absolute left-0 top-0.5 w-7 h-7 rounded-lg bg-black border border-[#10b981]/50 text-[#10b981] flex items-center justify-center font-bold text-xs shadow-[0_0_15px_rgba(16,185,129,0.2)] group-hover:scale-110 transition-transform">1</div>
-                  <h4 className="text-sm font-bold text-white mb-2 tracking-wide">Add Funds</h4>
-                  <p className="text-xs text-[#8a80a0] leading-relaxed">Use the volume slider on the left to select how many emails you want to send, and click 'Add Funds'.</p>
-                </div>
-
-                <div className="relative pl-12 group">
-                  <div className="absolute left-0 top-0.5 w-7 h-7 rounded-lg bg-black border border-white/20 text-white flex items-center justify-center font-bold text-xs shadow-inner group-hover:scale-110 transition-transform">2</div>
-                  <h4 className="text-sm font-bold text-white mb-2 tracking-wide">Download Engine</h4>
-                  <p className="text-xs text-[#8a80a0] leading-relaxed mb-5">To guarantee the highest possible inbox delivery rates, the sending engine runs directly on your local computer.</p>
-                  
-                  <div className="flex flex-wrap gap-4">
-                    <button className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] bg-[#070512] hover:bg-white/[0.05] text-white px-5 py-3 rounded-xl transition-all border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6h9.75v9.451L0 20.699M10.949 12.6H24V24l-12.951-1.801"/></svg>
-                      Windows
-                    </button>
-                    <button className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.15em] bg-[#070512] hover:bg-white/[0.05] text-white px-5 py-3 rounded-xl transition-all border border-white/[0.08] shadow-[inset_0_1px_0_rgba(255,255,255,0.05)]">
-                      <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 24 24"><path d="M12 2C6.477 2 2 6.477 2 12s4.477 10 10 10 10-4.477 10-10S17.523 2 12 2zm4.189 14.86c-.347.05-1.503-.687-2.748-.687-1.391 0-2.457.77-3.693.77-1.637 0-3.37-1.28-4.444-2.846-1.583-2.316-2.073-5.326-.818-7.25 1.002-1.53 2.656-2.518 4.417-2.518 1.488 0 2.593.687 3.655.687 1.026 0 2.308-.748 3.864-.748.593 0 2.298.064 3.394 1.139-3.082 1.62-2.564 5.679.526 6.945-.63 1.624-1.666 3.094-3.153 4.508zM14.545 4.5c-.752 1.025-2.091 1.64-3.12 1.554.168-1.218.824-2.375 1.627-3.094 1.008-.9 2.264-1.442 3.235-1.42-.164 1.258-.87 2.102-1.742 2.96z"/></svg>
-                      Mac / iOS
-                    </button>
-                  </div>
-                </div>
-
-                <div className="relative pl-12 group">
-                  <div className="absolute left-0 top-0.5 w-7 h-7 rounded-lg bg-black border border-white/20 text-white flex items-center justify-center font-bold text-xs shadow-inner group-hover:scale-110 transition-transform">3</div>
-                  <h4 className="text-sm font-bold text-white mb-2 tracking-wide">Connect Key</h4>
-                  <p className="text-xs text-[#8a80a0] leading-relaxed">Copy your API key from the vault above, and paste it into the Settings page of the desktop app.</p>
-                </div>
-              </div>
-
-              {/* The Tutorial Launcher */}
-              <div className="border-t border-white/[0.04] pt-8 mt-8">
-                <div className="bg-black/40 border border-[#9b5de5]/20 rounded-2xl p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-5 shadow-[inset_0_2px_15px_rgba(0,0,0,0.5)]">
+                
+              /* ── VIEW 2: SUBSCRIPTION PLAN SELECTOR (NEW OR UPGRADE) ── */
+                <div className="bg-gradient-to-b from-[#9b5de5]/5 to-[#020106] border border-[#9b5de5]/20 rounded-2xl p-6 text-center shadow-[inset_0_2px_30px_rgba(155,93,229,0.05),0_10px_40px_rgba(0,0,0,0.5)] mb-10 relative overflow-hidden flex-1 flex flex-col justify-between animate-[fadeUp_0.4s_ease-out]">
                   <div>
-                    <h4 className="text-sm font-bold text-white mb-1.5 tracking-wide">Need a visual walkthrough?</h4>
-                    <p className="text-[11px] text-[#8a80a0] font-bold uppercase tracking-wider">Open the interactive tutorial.</p>
+                    <div className="flex flex-col gap-3 mb-8 text-left">
+                      {TIERS.map((tier) => {
+                        // Calculate Upgrade Proration Math
+                        let displayPrice = tier.price;
+                        let btnText = 'Initialize Configuration';
+                        const isCurrentPlan = isAccountActive && currentPlanObj.id === tier.id;
+                        
+                        if (isUpgrading && !isCurrentPlan) {
+                          const diff = tier.price - currentPlanObj.price;
+                          displayPrice = Math.max(0, diff); // Never negative
+                          btnText = displayPrice === 0 ? 'Downgrade Plan' : 'Pay Difference';
+                        }
+
+                        return (
+                          <div 
+                            key={tier.id}
+                            onClick={() => !isCurrentPlan && setSelectedTier(tier.id)}
+                            className={`p-4 rounded-xl border transition-all duration-300 ${isCurrentPlan ? 'bg-white/[0.02] border-white/10 opacity-50 cursor-not-allowed' : selectedTier === tier.id ? 'bg-[#9b5de5]/10 border-[#9b5de5]/50 shadow-[0_0_20px_rgba(155,93,229,0.15)] cursor-pointer' : 'bg-black/40 border-white/[0.05] hover:border-white/[0.15] cursor-pointer'}`}
+                          >
+                            <div className="flex justify-between items-center mb-2">
+                              <div className={`font-bold text-sm ${selectedTier === tier.id ? 'text-white' : 'text-[#8a80a0]'}`}>
+                                {tier.name} {isCurrentPlan && '(Current)'}
+                              </div>
+                              <div className={`font-mono font-bold text-sm ${selectedTier === tier.id ? 'text-[#9b5de5]' : 'text-[#6a6080]'}`}>
+                                {isUpgrading ? (isCurrentPlan ? '-' : `+${displayPrice} USDT`) : `${tier.price} USDT`}
+                              </div>
+                            </div>
+                            <ul className="space-y-1.5 mt-3 border-t border-white/[0.05] pt-3">
+                              {tier.features.map((feat, i) => (
+                                <li key={i} className={`text-[10px] uppercase tracking-wider flex items-center gap-2 font-bold ${selectedTier === tier.id ? 'text-[#a890c0]' : 'text-[#6a6080]'}`}>
+                                  <Icons.Bolt /> {feat}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )
+                      })}
+                    </div>
                   </div>
+
                   <button 
-                    onClick={() => setShowGuide(true)}
-                    className="w-full sm:w-auto shrink-0 bg-[#9b5de5]/10 hover:bg-[#9b5de5]/20 border border-[#9b5de5]/30 text-[#9b5de5] hover:text-white font-bold uppercase tracking-[0.15em] text-[10px] px-6 py-3 rounded-xl transition-all shadow-[0_0_15px_rgba(155,93,229,0.1)] hover:shadow-[0_0_20px_rgba(155,93,229,0.3)]"
+                    onClick={() => {
+                      const selectedPlanObj = TIERS.find(t => t.id === selectedTier) || TIERS[1];
+                      let checkoutPrice = selectedPlanObj.price;
+                      if (isUpgrading) checkoutPrice = Math.max(0, selectedPlanObj.price - currentPlanObj.price);
+                      
+                      handleCheckout(checkoutPrice, `${selectedPlanObj.name} ${isUpgrading ? 'Upgrade' : 'Subscription'}`, 'activation');
+                    }}
+                    disabled={isProcessingCheckout || (isUpgrading && selectedTier === currentPlanObj.id)}
+                    className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] disabled:opacity-50 disabled:cursor-not-allowed mt-auto shrink-0"
                   >
-                    View Guide
+                    <span className="absolute inset-0 bg-gradient-to-r from-[#9b5de5] via-[#6c3b9c] to-[#9b5de5] opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                    <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
+                      <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">
+                        {isProcessingCheckout ? 'Processing...' : isUpgrading ? 'Confirm Upgrade' : 'Subscribe to Plan (USDT)'}
+                      </span>
+                    </div>
                   </button>
                 </div>
-              </div>
-
+              )}
             </section>
-
           </div>
         </div>
+
+        {/* ── DOMAIN MANAGER ── */}
+        {isAccountActive && (
+          <div className="mt-10">
+            <DomainManager apiKey={apiKey} />
+          </div>
+        )}
+
+        {/* ── INSTALLATION GUIDE BANNER ── */}
+        <div className="mt-10 bg-gradient-to-r from-[#9b5de5]/10 to-transparent border border-[#9b5de5]/20 rounded-2xl p-8 flex flex-col sm:flex-row items-center justify-between gap-6 backdrop-blur-md">
+          <div>
+            <h3 className="font-['Syne',sans-serif] text-xl font-bold text-white mb-2">Need help setting up?</h3>
+            <p className="text-sm text-[#8a80a0]">Read our complete step-by-step installation guide to properly configure your domains and desktop engine.</p>
+          </div>
+          <button 
+            onClick={() => setShowGuide(true)}
+            className="shrink-0 bg-white text-black font-bold uppercase tracking-[0.15em] text-[11px] px-8 py-4 rounded-xl hover:bg-[#9b5de5] hover:text-white transition-all shadow-[0_0_20px_rgba(255,255,255,0.1)] hover:shadow-[0_0_30px_rgba(155,93,229,0.4)]"
+          >
+            Read Installation Guide
+          </button>
+        </div>
+
       </div>
 
       {showGuide && <GuideModal onClose={() => setShowGuide(false)} />}
+
+
+      {/* ─── 10. LIVE SUPPORT CHAT WIDGET (FLOATING) ─────────────────────────── */}
+      <div className="fixed bottom-8 right-8 z-50 flex flex-col items-end pointer-events-none">
+        
+        {/* Chat Panel */}
+        <div className={`transition-all duration-400 origin-bottom-right ${isChatOpen ? 'scale-100 opacity-100 pointer-events-auto translate-y-0' : 'scale-95 opacity-0 pointer-events-none translate-y-4 hidden'}`}>
+          <div className="w-[380px] h-[600px] mb-6 bg-[#070512]/95 border border-[#9b5de5]/30 backdrop-blur-2xl rounded-3xl shadow-[0_20px_80px_rgba(0,0,0,0.9),0_0_40px_rgba(155,93,229,0.15)] flex flex-col overflow-hidden">
+            
+            {/* Header */}
+            <div className="bg-gradient-to-r from-[#1a0b2e] to-[#070512] p-6 border-b border-white/[0.05] flex justify-between items-center shrink-0 shadow-md">
+              <div className="flex items-center gap-4">
+                <div className="relative">
+                  <div className="w-12 h-12 rounded-full bg-gradient-to-br from-[#9b5de5] to-[#6c3b9c] flex items-center justify-center shadow-[0_0_20px_rgba(155,93,229,0.4)] text-white">
+                    <Icons.ChatBubble />
+                  </div>
+                  <div className="absolute bottom-0 right-0 w-3.5 h-3.5 bg-[#10b981] rounded-full border-[3px] border-[#070512]"></div>
+                </div>
+                <div>
+                  <h3 className="text-white text-base font-bold font-['Syne',sans-serif] tracking-tight">Technical Support</h3>
+                  <p className="text-[10px] text-[#10b981] font-bold tracking-widest uppercase mt-1 flex items-center gap-1.5">
+                    <span className="w-1.5 h-1.5 bg-[#10b981] rounded-full animate-pulse"></span>
+                    Engineers Online
+                  </p>
+                </div>
+              </div>
+              <button onClick={() => setIsChatOpen(false)} className="text-[#8a80a0] hover:text-white transition-colors bg-white/5 hover:bg-white/10 p-2.5 rounded-xl">
+                <Icons.Close />
+              </button>
+            </div>
+
+            {/* Warning / Status Banner */}
+            <div className="bg-gradient-to-r from-[#9b5de5]/10 via-[#9b5de5]/5 to-transparent border-b border-[#9b5de5]/20 py-3 px-5 text-center shrink-0 shadow-inner">
+              <p className="text-[10px] text-[#9b5de5] font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-2">
+                <Icons.Bolt />
+                We typically reply in under 5 minutes.
+              </p>
+            </div>
+
+            {/* Messages Feed */}
+            <div className="flex-1 p-6 overflow-y-auto space-y-6 pro-scroll bg-black/40">
+              {chatMessages.length === 0 ? (
+                <div className="h-full flex flex-col items-center justify-center text-center px-6 opacity-60">
+                  <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4 text-[#8a80a0]">
+                    <Icons.ChatBubble />
+                  </div>
+                  <p className="text-xs text-[#8a80a0] font-mono leading-relaxed uppercase tracking-wider">
+                    Secure channel opened.<br /><br />Leave a message and we'll text you back shortly.
+                  </p>
+                </div>
+              ) : (
+                chatMessages.map((msg, i) => {
+                  const isMe = msg.sender_id === userId
+                  return (
+                    <div key={i} className={`flex ${isMe ? 'justify-end' : 'justify-start'}`}>
+                      <div className={`max-w-[85%] p-4 rounded-2xl ${isMe ? 'bg-[#9b5de5]/20 border border-[#9b5de5]/30 text-white rounded-br-none shadow-[0_5px_15px_rgba(155,93,229,0.1)]' : 'bg-white/[0.05] border border-white/[0.08] text-gray-200 rounded-bl-none shadow-[0_5px_15px_rgba(0,0,0,0.2)]'}`}>
+                        {msg.image_url && (
+                          <div className="mb-3 relative rounded-xl overflow-hidden border border-white/10 group bg-black/50">
+                            <img src={msg.image_url} alt="Secure Upload" className="w-full h-auto cursor-zoom-in transition-transform duration-500 group-hover:scale-105" onClick={() => window.open(msg.image_url, '_blank')} />
+                          </div>
+                        )}
+                        {msg.message && <p className="leading-relaxed text-[13px] font-medium">{msg.message}</p>}
+                        <div className={`text-[9px] mt-2 opacity-50 font-mono tracking-widest uppercase ${isMe ? 'text-right' : 'text-left'}`}>
+                          {new Date(msg.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </div>
+                      </div>
+                    </div>
+                  )
+                })
+              )}
+              <div ref={chatEndRef} />
+            </div>
+
+            {/* Input Console */}
+            <form onSubmit={handleSendChatMessage} className="p-5 border-t border-white/[0.05] bg-[#070512] shrink-0">
+              <div className="flex items-center gap-3 bg-black/60 border border-white/[0.1] p-2 rounded-2xl focus-within:border-[#9b5de5]/50 transition-colors shadow-inner">
+                
+                <label className="cursor-pointer shrink-0 p-2.5 text-[#8a80a0] hover:text-[#9b5de5] hover:bg-[#9b5de5]/10 rounded-xl transition-all relative">
+                  <input type="file" accept="image/*" className="hidden" onChange={handleChatImageUpload} disabled={isChatUploading} />
+                  <Icons.Paperclip />
+                  {isChatUploading && (
+                    <div className="absolute inset-0 bg-black/80 flex items-center justify-center rounded-xl">
+                      <div className="w-4 h-4 border-2 border-[#9b5de5] border-t-transparent rounded-full animate-spin"></div>
+                    </div>
+                  )}
+                </label>
+                
+                <input 
+                  type="text" 
+                  placeholder="Type a secure message..." 
+                  value={chatInput}
+                  onChange={(e) => setChatInput(e.target.value)}
+                  disabled={isChatUploading}
+                  className="flex-1 bg-transparent border-none text-white text-sm focus:outline-none placeholder:text-[#8a80a0]/50 font-mono"
+                />
+                
+                <button 
+                  type="submit" 
+                  disabled={!chatInput.trim() || isChatUploading} 
+                  className="shrink-0 p-3.5 bg-gradient-to-br from-[#9b5de5] to-[#6c3b9c] text-white rounded-xl disabled:opacity-50 hover:shadow-[0_0_20px_rgba(155,93,229,0.5)] transition-all flex items-center justify-center"
+                >
+                  <Icons.Send />
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+
+        {/* ── THE TRIGGER BUTTON ── */}
+        <button 
+          onClick={() => setIsChatOpen(!isChatOpen)}
+          className="w-16 h-16 bg-gradient-to-tr from-[#020106] to-[#1a0b2e] rounded-full flex items-center justify-center shadow-[0_10px_40px_rgba(0,0,0,0.9),0_0_25px_rgba(155,93,229,0.4)] hover:shadow-[0_0_50px_rgba(155,93,229,0.7)] hover:scale-105 transition-all duration-300 pointer-events-auto border border-white/10 group relative z-50 text-white"
+        >
+          <div className="absolute inset-0 rounded-full border border-[#9b5de5]/30 group-hover:border-[#9b5de5]/80 transition-colors duration-300"></div>
+          {isChatOpen ? (
+            <Icons.Close />
+          ) : (
+            <div className="relative">
+              <Icons.ChatBubble />
+              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#10b981] rounded-full border-2 border-[#020106] animate-pulse"></div>
+            </div>
+          )}
+        </button>
+
+      </div>
       
     </main>
   )

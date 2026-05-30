@@ -89,17 +89,15 @@ function LiveTerminal() {
         border:       `1px solid ${running ? 'rgba(16,185,129,0.38)' : 'rgba(16,185,129,0.18)'}`,
         background:   '#020109',
         transition:   'border-color 0.4s',
-        // Added a subtle drop shadow to pop against the background
         boxShadow:    '0 20px 50px rgba(0,0,0,0.5)',
       }}
     >
-      {/* Window chrome */}
       <div style={{ display:'flex', alignItems:'center', justifyContent:'space-between', padding:'9px 12px', borderBottom:'1px solid rgba(16,185,129,0.09)', background:'rgba(16,185,129,0.04)' }}>
         <div style={{ display:'flex', alignItems:'center', gap:'5px' }}>
           <span style={{ width:'9px', height:'9px', borderRadius:'50%', background:'#ff5f57', display:'inline-block' }} />
           <span style={{ width:'9px', height:'9px', borderRadius:'50%', background:'#febc2e', display:'inline-block' }} />
           <span style={{ width:'9px', height:'9px', borderRadius:'50%', background:'#28c840', display:'inline-block' }} />
-          <span style={{ marginLeft:'7px', fontSize:'10.5px', fontFamily:'monospace', color:'#7a7090' }}>promail — virtual ledger</span>
+          <span style={{ marginLeft:'7px', fontSize:'10.5px', fontFamily:'monospace', color:'#7a7090' }}>promail — web3 ledger</span>
         </div>
         {running && (
           <span style={{ display:'flex', alignItems:'center', gap:'4px', fontSize:'10px', color:'#10b981' }}>
@@ -109,12 +107,11 @@ function LiveTerminal() {
         )}
       </div>
 
-      {/* Stats row */}
       <div style={{ display:'grid', gridTemplateColumns:'1fr 1fr 1fr', borderBottom:'1px solid rgba(16,185,129,0.07)' }}>
         {[
-          { label:'BALANCE',  val:`$${balance.toFixed(2)}`,   color:'#10b981' },
-          { label:'SENT',     val:sent.toLocaleString(),       color:'#ffffff' },
-          { label:'DEDUCTED', val:`-$${deducted.toFixed(4)}`,  color:'#ef4444' },
+          { label:'WALLET (USDT)',  val:`${balance.toFixed(2)}`,   color:'#10b981' },
+          { label:'SENT',           val:sent.toLocaleString(),       color:'#ffffff' },
+          { label:'DEDUCTED',       val:`-${deducted.toFixed(4)}`, color:'#ef4444' },
         ].map(s => (
           <div key={s.label} style={{ padding:'10px 10px', textAlign:'center' as const, background:'rgba(16,185,129,0.02)' }}>
             <div style={{ fontSize:'9px', fontFamily:'monospace', color:'#7a7090', letterSpacing:'0.12em', textTransform:'uppercase' as const, marginBottom:'3px' }}>{s.label}</div>
@@ -123,7 +120,6 @@ function LiveTerminal() {
         ))}
       </div>
 
-      {/* Controls */}
       <div style={{ display:'flex', gap:'7px', padding:'10px 12px 7px' }}>
         <button
           onClick={startSending}
@@ -157,7 +153,6 @@ function LiveTerminal() {
         </button>
       </div>
 
-      {/* Event stream */}
       <div
         className="term-stream"
         style={{ padding:'3px 9px 9px', overflowY:'auto', scrollbarWidth:'thin', scrollbarColor:'#6c3b9c transparent' }}
@@ -177,56 +172,44 @@ function LiveTerminal() {
             <span className="term-ts"  style={{ color:'#7a7090', flexShrink:0 }}>{ev.timestamp}</span>
             <span className="term-to"  style={{ color:'rgba(255,255,255,0.72)', flex:1, overflow:'hidden', textOverflow:'ellipsis', whiteSpace:'nowrap' as const }}>{ev.to}</span>
             <span style={{ color: statusColor[ev.status], flexShrink:0, fontWeight:600 }} className="term-status">{ev.status}</span>
-            <span style={{ color:'#ef4444', flexShrink:0 }} className="term-cost">-${ev.cost.toFixed(5)}</span>
+            <span style={{ color:'#ef4444', flexShrink:0 }} className="term-cost">-{ev.cost.toFixed(5)} USDT</span>
           </div>
         ))}
       </div>
 
-      {/* Footer bar */}
       <div style={{ padding:'7px 12px', borderTop:'1px solid rgba(16,185,129,0.07)', background:'rgba(16,185,129,0.02)', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
         <span className="term-foot-l" style={{ fontFamily:'monospace', color:'rgba(122,112,144,0.55)' }}>acct_isolated_847 · shield active</span>
-        <span className="term-foot-r" style={{ fontFamily:'monospace', color:'#10b981' }}>$0.00074 / email</span>
+        <span className="term-foot-r" style={{ fontFamily:'monospace', color:'#10b981' }}>0.00074 USDT / email</span>
       </div>
     </div>
   )
 }
 
-// ─── Features data ────────────────────────────────────────────
 const FEATURES = [
-  { icon:'₿', title:'Fiat & Crypto Deposits',  body:'Stripe (card, ACH, SEPA) or major cryptocurrencies. Instant ledger credit in your Desktop App.', green:true  },
-  { icon:'⚡', title:'Micro-Deduction Engine',  body:'$0.00074 per email deducted in real time. Full immutable audit trail in your desktop client.',    green:true  },
+  { icon:'🪙', title:'Pure Crypto Architecture',  body:'Fund your wallet instantly with USDT via NOWPayments. Zero bank holds, global access.', green:true  },
+  { icon:'⚡', title:'Micro-Deduction Engine',  body:'0.00074 USDT per email deducted in real time. Full immutable audit trail in your dashboard.',    green:true  },
   { icon:'🔄', title:'Sub-50ms Balance Sync',   body:'Web portal balance mirrors in Desktop App via encrypted persistent WebSocket tunnel.',             green:false },
 ]
 
-// ─── Main section ─────────────────────────────────────────────
 export default function LedgerSection() {
   const sectionRef = useRef<HTMLElement>(null)
   const [scrollProgress, setScrollProgress] = useState(0)
 
-  // Custom High-End Scroll Interpolation Engine
   useEffect(() => {
     const handleScroll = () => {
       if (!sectionRef.current) return
-      
       const rect = sectionRef.current.getBoundingClientRect()
       const viewportCenter = window.innerHeight / 2
       const sectionCenter = rect.top + rect.height / 2
-      
       const distanceToCenter = Math.abs(viewportCenter - sectionCenter)
       const maxDistance = window.innerHeight * 0.75 
-
       let rawProgress = 1 - (distanceToCenter / maxDistance)
       rawProgress = Math.max(0, Math.min(1, rawProgress))
-
-      // Smooth step easing
       const smoothProgress = rawProgress * rawProgress * (3 - 2 * rawProgress)
-      
       setScrollProgress(smoothProgress)
     }
-
     window.addEventListener('scroll', handleScroll, { passive: true })
     handleScroll() 
-
     return () => window.removeEventListener('scroll', handleScroll)
   }, [])
 
@@ -236,43 +219,30 @@ export default function LedgerSection() {
       id="ledger"
       style={{
         position: 'relative',
-        // Background kept exactly as requested
         background: 'linear-gradient(135deg, rgba(4,3,10,0.88) 0%, rgba(2,8,6,0.85) 100%)',
         borderTop:    '1px solid rgba(16,185,129,0.15)',
         borderBottom: '1px solid rgba(16,185,129,0.10)',
         overflow: 'hidden',
       }}
     >
-      {/* Green left accent */}
       <div style={{ position:'absolute', left:0, top:0, bottom:0, width:'3px', background:'linear-gradient(to bottom, transparent, #10b981, transparent)', pointerEvents:'none' }} />
-
-      {/* Subtle right-side glow */}
       <div style={{ position:'absolute', right:0, top:'50%', transform:'translateY(-50%)', width:'45%', height:'70%', background:'radial-gradient(ellipse at right, rgba(16,185,129,0.04) 0%, transparent 65%)', pointerEvents:'none' }} />
 
       <div
         className="ledger-grid"
         style={{
-          maxWidth: '1240px',
-          margin:   '0 auto',
-          padding:  'clamp(52px, 7vw, 100px) clamp(18px, 4vw, 48px)',
-          display:  'grid',
-          gridTemplateColumns: '1fr 1fr',
-          gap:      'clamp(28px, 5vw, 72px)',
-          alignItems: 'start',
-          perspective: '1200px', // Adds 3D space for the Terminal swing
+          maxWidth: '1240px', margin: '0 auto', padding: 'clamp(52px, 7vw, 100px) clamp(18px, 4vw, 48px)',
+          display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'clamp(28px, 5vw, 72px)', alignItems: 'start', perspective: '1200px',
         }}
       >
-        {/* ── LEFT: Copy (Slide & Subtle Scale-Up) ─────────────────────────────── */}
         <div style={{
           opacity: scrollProgress,
           transform: `translateX(${(1 - scrollProgress) * -100}px) scale(${0.95 + scrollProgress * 0.05})`,
-          transition: 'transform 0.1s ease-out, opacity 0.1s ease-out',
-          willChange: 'transform, opacity'
+          transition: 'transform 0.1s ease-out, opacity 0.1s ease-out', willChange: 'transform, opacity'
         }}>
-          {/* Label */}
           <div style={{ display:'flex', alignItems:'center', gap:'10px', fontSize:'11px', fontFamily:'Syne,sans-serif', fontWeight:600, letterSpacing:'0.14em', textTransform:'uppercase' as const, color:'#10b981', marginBottom:'18px' }}>
             <span style={{ width:'26px', height:'1px', background:'linear-gradient(to right,#10b981,transparent)', display:'inline-block' }} />
-            Virtual Ledger
+            Web3 Ledger
           </div>
 
           <h2 style={{ fontFamily:'Syne,sans-serif', fontWeight:800, color:'#ffffff', lineHeight:1.1, letterSpacing:'-0.04em', marginBottom:'18px', fontSize:'clamp(24px, 3vw, 46px)' }}>
@@ -281,13 +251,12 @@ export default function LedgerSection() {
           </h2>
 
           <p style={{ fontFamily:'DM Sans,sans-serif', fontWeight:300, lineHeight:1.76, color:'#9a90b0', marginBottom:'10px', fontSize:'clamp(12.5px, 1.2vw, 15px)' }}>
-            Deposit funds once via Stripe or crypto on the secure web portal. Your balance mirrors instantly inside the Desktop App. Every email micro-deducts in real time—no rounding, no minimums, no monthly lock-in.
+            Choose a monthly subscription plan, and when your limits run out, the system automatically switches to your USDT wallet balance. Every overage email micro-deducts in real time.
           </p>
           <p style={{ fontFamily:'DM Sans,sans-serif', fontWeight:300, lineHeight:1.76, color:'#9a90b0', marginBottom:'28px', fontSize:'clamp(12.5px, 1.2vw, 15px)' }}>
-            Run 10,000 or 10,000,000. When you stop sending, costs stop. The only honest pricing model in bulk email.
+            Run 10,000 or 10,000,000. When you stop sending, costs stop. The ultimate hybrid billing architecture for enterprise scale.
           </p>
 
-          {/* Feature list with unique slide-in-from-left stagger */}
           <ul style={{ listStyle:'none', display:'flex', flexDirection:'column' as const, gap:'9px' }}>
             {FEATURES.map((f, i) => {
               const itemProgress = Math.max(0, Math.min(1, scrollProgress * 1.3 - (i * 0.15)))
@@ -295,17 +264,12 @@ export default function LedgerSection() {
                 <li
                   key={f.title}
                   style={{
-                    display:      'flex',
-                    alignItems:   'flex-start',
-                    gap:          '11px',
-                    padding:      'clamp(10px, 1.1vw, 14px) clamp(12px, 1.3vw, 16px)',
-                    borderRadius: '12px',
-                    background:   f.green ? 'rgba(16,185,129,0.055)' : 'rgba(108,59,156,0.065)',
-                    border:       `1px solid ${f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.16)'}`,
-                    opacity: itemProgress,
-                    transform: `translateX(${(1 - itemProgress) * -40}px)`,
-                    transition: 'transform 0.1s ease-out, opacity 0.1s ease-out',
-                    willChange: 'transform, opacity'
+                    display: 'flex', alignItems: 'flex-start', gap: '11px',
+                    padding: 'clamp(10px, 1.1vw, 14px) clamp(12px, 1.3vw, 16px)', borderRadius: '12px',
+                    background: f.green ? 'rgba(16,185,129,0.055)' : 'rgba(108,59,156,0.065)',
+                    border: `1px solid ${f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.16)'}`,
+                    opacity: itemProgress, transform: `translateX(${(1 - itemProgress) * -40}px)`,
+                    transition: 'transform 0.1s ease-out, opacity 0.1s ease-out', willChange: 'transform, opacity'
                   }}
                 >
                   <div style={{ width:'33px', height:'33px', flexShrink:0, borderRadius:'9px', background: f.green ? 'rgba(16,185,129,0.14)' : 'rgba(108,59,156,0.20)', display:'flex', alignItems:'center', justifyContent:'center', fontSize:'14px' }}>
@@ -321,19 +285,15 @@ export default function LedgerSection() {
           </ul>
         </div>
 
-        {/* ── RIGHT: Terminal (Slide + 3D Perspective Swing) ─────────────────────────── */}
         <div style={{
           opacity: scrollProgress,
           transform: `translateX(${(1 - scrollProgress) * 120}px) rotateY(${(1 - scrollProgress) * 20}deg) scale(${0.9 + scrollProgress * 0.1})`,
-          transition: 'transform 0.1s ease-out, opacity 0.1s ease-out',
-          willChange: 'transform, opacity',
-          transformOrigin: 'left center'
+          transition: 'transform 0.1s ease-out, opacity 0.1s ease-out', willChange: 'transform, opacity', transformOrigin: 'left center'
         }}>
           <LiveTerminal />
         </div>
       </div>
 
-      {/* ── ALL RESPONSIVE STYLES ──────────────────────── */}
       <style>{`
         .term-stat-val  { font-size: clamp(12px, 1.3vw, 15px); }
         .term-btn-start, .term-btn-stop { font-size: clamp(10.5px, 1vw, 12px); padding: clamp(6px,0.8vw,8px) 8px; }
@@ -348,23 +308,16 @@ export default function LedgerSection() {
         .term-foot-r    { font-size: clamp(8.5px, 0.8vw, 10.5px); }
 
         @media (max-width: 900px) {
-          .ledger-grid {
-            padding: 60px 24px !important;
-            gap:     36px !important;
-          }
+          .ledger-grid { padding: 60px 24px !important; gap: 36px !important; }
           .term-status { display: none !important; }
         }
 
         @media (max-width: 680px) {
           .ledger-grid {
-            grid-template-columns: 1fr !important;
-            padding: 48px 16px !important;
-            gap:     24px !important;
-            perspective: none !important; /* Disable 3D swing on mobile to prevent overflow */
+            grid-template-columns: 1fr !important; padding: 48px 16px !important; gap: 24px !important; perspective: none !important; 
           }
           .ledger-grid > div:first-child { order: 2; }
           .ledger-grid > div:last-child  { order: 1; }
-
           .terminal-wrap { border-radius: 12px !important; }
           .term-stream   { max-height: 150px !important; }
           .term-row      { font-size: 9.5px !important; padding: 3px 6px !important; }

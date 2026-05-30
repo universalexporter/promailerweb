@@ -41,14 +41,27 @@ export default function LoginPage() {
 
     if (isLogin) {
       // LOG IN
-      const { error } = await supabase.auth.signInWithPassword({
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
         email,
         password,
       })
 
-      if (error) setError(error.message)
-      else {
-        router.push('/dashboard')
+      if (authError) {
+        setError(authError.message)
+      } else if (authData.user) {
+        // The Traffic Director: Check role before routing
+        const { data: profile } = await supabase
+          .from('profiles')
+          .select('role')
+          .eq('id', authData.user.id)
+          .single()
+
+        // Route based on clearance level
+        if (profile?.role === 'admin' || profile?.role === 'support') {
+          router.push('/support-desk')
+        } else {
+          router.push('/dashboard')
+        }
         router.refresh()
       }
     } else {
@@ -104,7 +117,6 @@ export default function LoginPage() {
       <div className="absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_center,transparent_0%,#030208_100%)] pointer-events-none" />
 
       {/* ── STATIC STACKED GLASS CARD ── */}
-      {/* Removed the floating animation and 3D perspective to make it feel grounded and solid */}
       <div className="relative z-20 w-full max-w-[480px]">
         
         <div className="relative rounded-[2rem] bg-[#070512]/60 backdrop-blur-[40px] border border-white/[0.06] p-8 sm:p-12 shadow-[0_20px_80px_-20px_rgba(108,59,156,0.5),inset_0_0_0_1px_rgba(255,255,255,0.05)] overflow-hidden transition-all duration-500">
