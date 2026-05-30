@@ -1,5 +1,12 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
+import { createClient } from '@supabase/supabase-js';
+
+// Initialize admin Supabase client using service role key to bypass RLS for server actions
+const supabaseAdmin = createClient(
+  process.env.NEXT_PUBLIC_SUPABASE_URL!,
+  process.env.SUPABASE_SERVICE_ROLE_KEY!
+);
 
 export async function POST(req: Request) {
   try {
@@ -10,16 +17,15 @@ export async function POST(req: Request) {
     const PRIVATE_KEY = process.env.COINPAYMENTS_PRIVATE_KEY;
 
     if (!PUBLIC_KEY || !PRIVATE_KEY) {
-      console.error("SYSTEM HALT: Coinpayments API Keys are missing.");
       return NextResponse.json({ error: "Missing Keys" }, { status: 500 });
     }
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
     
-    // Extract the client's email from the order_id we passed from the frontend
+    // Extract user ID from your order_id schema (assuming order_id format is "userId_timestamp")
+    const userId = order_id.split('_')[0];
     const clientEmail = order_id.split('_')[1] || 'client@promail.club';
 
-    // 1. Construct the payload (Added buyer_email to satisfy Coinpayments)
     const payloadParams = new URLSearchParams({
       version: '1',
       cmd: 'create_transaction',
@@ -27,7 +33,7 @@ export async function POST(req: Request) {
       format: 'json',
       amount: amount.toString(),
       currency1: 'USDT',
-      currency2: 'USDT.TRC20', // Ensure Tron USDT is enabled in your Coinpayments settings!
+      currency2: 'USDT.TRC20',
       buyer_email: clientEmail, 
       item_name: description,
       custom: order_id,
@@ -36,11 +42,8 @@ export async function POST(req: Request) {
     });
 
     const payloadString = payloadParams.toString();
-
-    // 2. Cryptographic Signature
     const hmac = crypto.createHmac('sha512', PRIVATE_KEY).update(payloadString).digest('hex');
 
-    // 3. Dispatch to Coinpayments
     const response = await fetch('https://www.coinpayments.net/api.php', {
       method: 'POST',
       headers: {
@@ -52,17 +55,24 @@ export async function POST(req: Request) {
 
     const data = await response.json();
 
-    // 4. Traffic Control & Error Logging
     if (data.error === 'ok' && data.result) {
+      // 💾 SAVE PENDING TRANSACTION TO SUPABASE BEFORE REDIRECTING
+      await supabaseAdmin.from('transactions').insert({
+        txn_id: data.result.txn_id, // CoinPayments tracking ID
+        user_id: userId,
+        amount: amount,
+        currency: 'USDT.TRC20',
+        status: 'pending',
+        description: description,
+        order_id: order_id
+      });
+
       return NextResponse.json({ checkout_url: data.result.checkout_url }, { status: 200 });
     } else {
-      // 🚨 IF IT FAILS, THIS LOGS THE EXACT COINPAYMENTS REASON TO VERCEL 🚨
-      console.error("COINPAYMENTS REJECTED INVOICE. REASON:", data.error);
       return NextResponse.json({ error: data.error }, { status: 500 });
     }
 
   } catch (error: any) {
-    console.error("Checkout System Crash:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }
