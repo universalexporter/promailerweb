@@ -28,7 +28,6 @@ type DomainData = {
   dns_records: any[]
 }
 
-// NEW: Pricing Model
 type PricingData = {
   id: string
   name: string
@@ -373,7 +372,6 @@ export default function SupportDesk() {
 
       {/* ── LEFT PANEL: CLIENT NETWORK ── */}
       <div className="w-[380px] shrink-0 border-r border-white/[0.08] bg-[#070512] flex flex-col h-full z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
-        
         <div className="p-8 border-b border-white/[0.08] bg-black/40 shrink-0">
           <h1 className="font-['Syne',sans-serif] text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">
             SUPPORT HQ
@@ -432,8 +430,8 @@ export default function SupportDesk() {
       {/* ── RIGHT PANEL: MASTER CONTROL ── */}
       <div className="flex-1 flex flex-col h-full bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
         
-        {/* VIEW: GLOBAL SETTINGS */}
-        {activeTab === 'global' && (
+        {/* CONDITIONAL ROUTING: 3 STATES (Global, Client, Empty) */}
+        {activeTab === 'global' ? (
           <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
             <div className="max-w-5xl mx-auto">
               <div className="flex justify-between items-end mb-10 border-b border-white/[0.05] pb-8">
@@ -481,10 +479,7 @@ export default function SupportDesk() {
               </div>
             </div>
           </div>
-        )}
-
-        {/* VIEW: CLIENT SELECTED */}
-        {selectedClient && activeTab !== 'global' && (
+        ) : selectedClient ? (
           <>
             <div className="p-8 border-b border-white/[0.08] bg-black/40 backdrop-blur-xl flex flex-col gap-6 z-10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] shrink-0">
               <div className="flex justify-between items-start">
@@ -736,6 +731,20 @@ export default function SupportDesk() {
               </div>
             )}
           </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-[#8a80a0] relative overflow-hidden">
+            <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-[0.02] pointer-events-none"></div>
+            <div className="w-[600px] h-[600px] bg-[#9b5de5]/5 blur-[120px] rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
+            
+            <div className="relative z-10 flex flex-col items-center animate-[fadeUp_0.8s_ease-out]">
+              <div className="w-24 h-24 rounded-full border border-white/[0.05] flex items-center justify-center mb-8 bg-black/40 shadow-[0_0_50px_rgba(0,0,0,0.5)] relative">
+                <div className="absolute inset-0 rounded-full border border-[#9b5de5]/20 animate-ping opacity-20"></div>
+                <svg className="w-10 h-10 opacity-40 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
+              </div>
+              <p className="font-['Syne',sans-serif] text-3xl font-extrabold text-white mb-3 tracking-tight">Awaiting Target Selection</p>
+              <p className="font-mono text-xs tracking-[0.2em] uppercase text-[#8a80a0]">Initialize connection by selecting a node from the network array on the left.</p>
+            </div>
+          </div>
         )}
       </div>
     </main>

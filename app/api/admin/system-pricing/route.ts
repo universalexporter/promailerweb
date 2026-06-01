@@ -11,7 +11,7 @@ export async function GET() {
   try {
     const { data, error } = await supabaseAdmin.from('system_pricing').select('*').order('price', { ascending: true })
     if (error) throw error
-    return NextResponse.json({ pricing: data }, { status: 200 })
+    return NextResponse.json({ pricing: data || [] }, { status: 200 })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
@@ -20,9 +20,8 @@ export async function GET() {
 // UPDATE pricing
 export async function POST(req: Request) {
   try {
-    const { updates } = await req.json() // Array of modified plan objects
+    const { updates } = await req.json()
     
-    // Upsert the whole array
     const { error } = await supabaseAdmin.from('system_pricing').upsert(updates)
     
     if (error) throw error
