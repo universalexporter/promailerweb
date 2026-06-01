@@ -17,6 +17,8 @@ type ClientData = {
   role: string
   api_key: string
   balance: number
+  active_plan_id: string | null
+  plan_expires_at: string | null
 }
 
 type DomainData = {
@@ -28,7 +30,7 @@ type DomainData = {
 
 type ModalState = {
   isOpen: boolean
-  type: 'balance' | 'email' | 'password' | null
+  type: 'balance' | 'email' | 'password' | 'plan' | null
   title: string
   placeholder: string
   currentValue: string
@@ -184,6 +186,10 @@ export default function SupportDesk() {
       title = 'Execute Financial Override'
       placeholder = 'Enter new USDT balance'
       currentValue = selectedClient.balance.toString()
+    } else if (type === 'plan') {
+      title = 'Execute Subscription Override'
+      placeholder = 'Select Tier'
+      currentValue = selectedClient.active_plan_id || 'none'
     } else if (type === 'email') {
       title = 'Change Account Email'
       placeholder = 'Type new email address...'
@@ -210,38 +216,33 @@ export default function SupportDesk() {
     setIsActionLoading(true)
 
     try {
+      // Route ALL updates through the unified update-client endpoint
+      const res = await fetch('/api/admin/update-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ 
+          userId: selectedClient.id, 
+          action: modal.type, 
+          value: modalInput 
+        })
+      })
+
+      if (!res.ok) {
+        const err = await res.json()
+        throw new Error(err.error || 'Database rejection.')
+      }
+
+      // Update local state based on what changed
       if (modal.type === 'balance') {
         const newBalance = parseFloat(modalInput)
-        if (isNaN(newBalance)) throw new Error('Invalid numeric format for balance.')
-
-        const res = await fetch('/api/admin/clients', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: selectedClient.id, newBalance })
-        })
-
-        if (!res.ok) throw new Error('Database rejection.')
         setClients(clients.map(c => c.id === selectedClient.id ? { ...c, balance: newBalance } : c))
         setSelectedClient({ ...selectedClient, balance: newBalance })
-
-      } else if (modal.type === 'email' || modal.type === 'password') {
-        const actionPayload = modal.type === 'email' ? 'update_email' : 'update_password'
-        
-        const res = await fetch('/api/admin/update-client', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ userId: selectedClient.id, action: actionPayload, value: modalInput })
-        })
-
-        if (!res.ok) {
-          const err = await res.json()
-          throw new Error(err.error)
-        }
-
-        if (modal.type === 'email') {
-          setClients(clients.map(c => c.id === selectedClient.id ? { ...c, email: modalInput } : c))
-          setSelectedClient({ ...selectedClient, email: modalInput })
-        }
+      } else if (modal.type === 'plan') {
+        setClients(clients.map(c => c.id === selectedClient.id ? { ...c, active_plan_id: modalInput === 'none' ? null : modalInput } : c))
+        setSelectedClient({ ...selectedClient, active_plan_id: modalInput === 'none' ? null : modalInput })
+      } else if (modal.type === 'email') {
+        setClients(clients.map(c => c.id === selectedClient.id ? { ...c, email: modalInput } : c))
+        setSelectedClient({ ...selectedClient, email: modalInput })
       }
       
       closeOverrideModal()
@@ -267,10 +268,8 @@ export default function SupportDesk() {
 
   // ─── 9. MAIN UI RENDER ────────────────────────────────────────────────────
   return (
-    // fixed inset-0 completely locks the outer wrapper to the screen edges, enabling safe inner scrolling
     <main className="fixed inset-0 bg-[#020106] text-white font-['DM_Sans',sans-serif] flex overflow-hidden selection:bg-[#9b5de5]/30">
       
-      {/* ── HIGH-END CUSTOM SCROLLBAR CSS ── */}
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
         .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
@@ -287,15 +286,28 @@ export default function SupportDesk() {
             
             <form onSubmit={handleExecuteModalAction}>
               <div className="mb-6">
-                <input
-                  type={modal.type === 'password' ? 'text' : 'text'}
-                  value={modalInput}
-                  onChange={(e) => setModalInput(e.target.value)}
-                  placeholder={modal.placeholder}
-                  className="w-full bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#9b5de5] focus:ring-1 focus:ring-[#9b5de5]/50 transition-all font-mono text-sm"
-                  autoFocus
-                  required
-                />
+                {modal.type === 'plan' ? (
+                  <select
+                    value={modalInput}
+                    onChange={(e) => setModalInput(e.target.value)}
+                    className="w-full bg-[#020106] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#9b5de5] focus:ring-1 focus:ring-[#9b5de5]/50 transition-all font-mono text-sm"
+                  >
+                    <option value="none">Revoke Access (No Plan)</option>
+                    <option value="starter">Starter Plan</option>
+                    <option value="pro">Pro Plan</option>
+                    <option value="enterprise">Scale / Enterprise Plan</option>
+                  </select>
+                ) : (
+                  <input
+                    type={modal.type === 'password' ? 'text' : 'text'}
+                    value={modalInput}
+                    onChange={(e) => setModalInput(e.target.value)}
+                    placeholder={modal.placeholder}
+                    className="w-full bg-[#020106] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#9b5de5] focus:ring-1 focus:ring-[#9b5de5]/50 transition-all font-mono text-sm"
+                    autoFocus
+                    required
+                  />
+                )}
               </div>
               <div className="flex gap-3 justify-end">
                 <button
@@ -360,7 +372,7 @@ export default function SupportDesk() {
                     {client.role}
                   </span>
                   <span className="font-mono text-[#10b981] font-bold tracking-tight">
-                    {client.balance.toFixed(2)} <span className="text-[10px] text-[#10b981]/50">USDT</span>
+                    {client.balance?.toFixed(2) || '0.00'} <span className="text-[10px] text-[#10b981]/50">USDT</span>
                   </span>
                 </div>
               </div>
@@ -373,7 +385,6 @@ export default function SupportDesk() {
       <div className="flex-1 flex flex-col h-full bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
         {selectedClient ? (
           <>
-            {/* Master Header (shrink-0 ensures it doesn't crush under flexbox pressure) */}
             <div className="p-8 border-b border-white/[0.08] bg-black/40 backdrop-blur-xl flex flex-col gap-6 z-10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] shrink-0">
               <div className="flex justify-between items-start">
                 <div>
@@ -403,10 +414,8 @@ export default function SupportDesk() {
               </div>
             </div>
 
-            {/* ── TAB CONTENT: LIVE CHAT ENGINE ── */}
             {activeTab === 'chat' && (
               <div className="flex-1 flex flex-col min-h-0 animate-[fadeIn_0.3s_ease-out]">
-                {/* Scrollable Chat Area */}
                 <div className="flex-1 overflow-y-auto p-8 space-y-6 custom-scrollbar">
                   {messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-[#8a80a0] opacity-50">
@@ -438,7 +447,6 @@ export default function SupportDesk() {
                   <div ref={messagesEndRef} />
                 </div>
 
-                {/* Fixed Input Form */}
                 <form onSubmit={handleSendMessage} className="shrink-0 p-6 bg-black/80 border-t border-white/[0.08] backdrop-blur-xl z-20">
                   <div className="flex gap-4 max-w-6xl mx-auto items-center">
                     <div className="w-2 h-2 rounded-full bg-[#10b981] shadow-[0_0_10px_#10b981] animate-pulse"></div>
@@ -461,13 +469,14 @@ export default function SupportDesk() {
               </div>
             )}
 
-            {/* ── TAB CONTENT: DEEP INSPECTION & OVERRIDES ── */}
             {activeTab === 'settings' && (
               <div className="flex-1 overflow-y-auto p-10 animate-[fadeIn_0.3s_ease-out] custom-scrollbar">
                 <div className="max-w-5xl mx-auto space-y-8 pb-20">
                   
+                  {/* Financial & Plan Engine Grid */}
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
                     
+                    {/* Finance Card */}
                     <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-8 backdrop-blur-md relative overflow-hidden group">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-[#10b981]/10 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-700"></div>
                       <h3 className="font-['Syne',sans-serif] text-sm font-bold mb-6 text-[#10b981] uppercase tracking-[0.2em] flex items-center gap-3">
@@ -477,7 +486,7 @@ export default function SupportDesk() {
                       <div className="mb-8">
                         <div className="text-[10px] text-[#8a80a0] uppercase tracking-[0.2em] font-bold mb-2">Validated Cryptographic Balance</div>
                         <div className="text-5xl font-black text-white font-mono tracking-tighter drop-shadow-[0_0_20px_rgba(16,185,129,0.3)]">
-                          {selectedClient.balance.toFixed(2)} <span className="text-xl text-[#10b981] opacity-80">USDT</span>
+                          {selectedClient.balance?.toFixed(2) || '0.00'} <span className="text-xl text-[#10b981] opacity-80">USDT</span>
                         </div>
                       </div>
                       <button 
@@ -489,22 +498,45 @@ export default function SupportDesk() {
                       </button>
                     </div>
 
+                    {/* Subscription Engine Card */}
                     <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-8 backdrop-blur-md relative overflow-hidden group">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[#3b82f6]/10 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-700"></div>
+                      <h3 className="font-['Syne',sans-serif] text-sm font-bold mb-6 text-[#3b82f6] uppercase tracking-[0.2em] flex items-center gap-3">
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 002-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"></path></svg>
+                        Subscription Engine
+                      </h3>
+                      <div className="mb-8">
+                        <div className="text-[10px] text-[#8a80a0] uppercase tracking-[0.2em] font-bold mb-2">Active Plan Matrix</div>
+                        <div className="text-3xl font-black text-white font-mono tracking-tighter drop-shadow-[0_0_20px_rgba(59,130,246,0.3)] capitalize">
+                          {selectedClient.active_plan_id || 'No Plan'}
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => openOverrideModal('plan')} 
+                        disabled={isActionLoading} 
+                        className="w-full py-4 bg-[#3b82f6]/10 text-[#3b82f6] border border-[#3b82f6]/30 rounded-xl text-[10px] font-extrabold uppercase tracking-[0.2em] hover:bg-[#3b82f6] hover:text-white transition-all shadow-[inset_0_0_20px_rgba(59,130,246,0.1)] disabled:opacity-50"
+                      >
+                        Modify Tier Access
+                      </button>
+                    </div>
+
+                    {/* Identity Matrix */}
+                    <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-8 backdrop-blur-md relative overflow-hidden group lg:col-span-2">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-[#9b5de5]/10 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-700"></div>
                       <h3 className="font-['Syne',sans-serif] text-sm font-bold mb-6 text-[#9b5de5] uppercase tracking-[0.2em] flex items-center gap-3">
                         <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z"></path></svg>
                         Identity Access Protocols
                       </h3>
                       
-                      <div className="space-y-4">
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <div className="p-4 bg-white/[0.02] border border-white/[0.05] rounded-xl flex justify-between items-center">
-                          <div>
+                          <div className="truncate pr-4">
                             <div className="text-xs font-bold text-white mb-1">Authorization Email</div>
-                            <div className="text-[10px] text-[#8a80a0] font-mono">{selectedClient.email}</div>
+                            <div className="text-[10px] text-[#8a80a0] font-mono truncate">{selectedClient.email}</div>
                           </div>
                           <button 
                             onClick={() => openOverrideModal('email')} 
-                            className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors border border-white/10"
+                            className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors border border-white/10 shrink-0"
                           >
                             Change Email
                           </button>
@@ -517,7 +549,7 @@ export default function SupportDesk() {
                           </div>
                           <button 
                             onClick={() => openOverrideModal('password')} 
-                            className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors border border-white/10"
+                            className="px-4 py-2 bg-white/[0.05] hover:bg-white/[0.1] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest transition-colors border border-white/10 shrink-0"
                           >
                             Change Password
                           </button>
@@ -526,6 +558,7 @@ export default function SupportDesk() {
                     </div>
                   </div>
 
+                  {/* DNS Inspector */}
                   <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-8 backdrop-blur-md">
                     <div className="flex justify-between items-center mb-8">
                       <h3 className="font-['Syne',sans-serif] text-sm font-bold text-[#9b5de5] uppercase tracking-[0.2em] flex items-center gap-3">
