@@ -14,12 +14,14 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing required data' }, { status: 400 })
     }
 
-    // 1. FINANCIAL ROUTING (Update Wallet Balance)
+    // 1. FINANCIAL ROUTING (Upsert Wallet Balance to prevent phantom rows)
     if (action === 'balance') {
       const { error } = await supabaseAdmin
         .from('wallets')
-        .update({ balance: parseFloat(value) })
-        .eq('user_id', userId)
+        .upsert(
+          { user_id: userId, balance: parseFloat(value) },
+          { onConflict: 'user_id' } // Forces Supabase to match the user or create a new row
+        )
 
       if (error) throw error
       return NextResponse.json({ success: true }, { status: 200 })
