@@ -139,8 +139,10 @@ export default function DashboardPage() {
   // Hardware Audio
   const tickSound = typeof window !== 'undefined' ? new Audio('/tick.mp3') : null
 
-  // ─── 5. INITIALIZATION & DATA FETCHING ────────────────────────────────────
+  // ─── 5. INITIALIZATION, DATA FETCHING & REALTIME LISTENER ─────────────────
   useEffect(() => {
+    let planSubscription: any = null;
+
     const checkUserAndFetchData = async () => {
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) {
@@ -184,6 +186,40 @@ export default function DashboardPage() {
           setWalletBalance(Number(walletRes.data.balance))
         }
 
+        // 🚨 START REALTIME LISTENER 🚨
+        // This instantly re-runs the data pull if the Admin dashboard forces an approval
+        planSubscription = supabase
+          .channel('public:profiles_and_wallets')
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'profiles', filter: `id=eq.${session.user.id}` },
+            async (payload) => {
+               // When admin clicks approve, profile is updated. We update the UI instantly.
+               const newDbPlan = payload.new.active_plan_id
+               const newDbExpires = payload.new.plan_expires_at
+               
+               if (newDbPlan) {
+                 setIsAccountActive(true)
+                 setActivePlanId(newDbPlan)
+                 setIsUpgrading(false) // Force close upgrade window if open
+                 
+                 if (newDbExpires) {
+                   const diffTime = Math.abs(new Date(newDbExpires).getTime() - new Date().getTime());
+                   setDaysRemaining(Math.ceil(diffTime / (1000 * 60 * 60 * 24)));
+                 }
+               }
+            }
+          )
+          .on(
+            'postgres_changes',
+            { event: 'UPDATE', schema: 'public', table: 'wallets', filter: `user_id=eq.${session.user.id}` },
+            async (payload) => {
+               // Instantly update UI if wallet balance is changed by admin or webhook
+               setWalletBalance(Number(payload.new.balance))
+            }
+          )
+          .subscribe()
+
       } catch (error) {
         console.error("Error fetching live user data:", error)
       } finally {
@@ -192,6 +228,10 @@ export default function DashboardPage() {
     }
     
     checkUserAndFetchData()
+
+    return () => {
+      if (planSubscription) supabase.removeChannel(planSubscription);
+    }
   }, [router])
 
   // ─── 6. SUPPORT CHAT ENGINE ───────────────────────────────────────────────
