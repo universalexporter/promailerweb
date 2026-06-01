@@ -28,6 +28,16 @@ type DomainData = {
   dns_records: any[]
 }
 
+// NEW: Pricing Model
+type PricingData = {
+  id: string
+  name: string
+  price: number
+  email_limit: number
+  overage_cost: number
+  features: string[]
+}
+
 type ModalState = {
   isOpen: boolean
   type: 'balance' | 'email' | 'password' | 'plan' | null
@@ -46,7 +56,7 @@ export default function SupportDesk() {
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedClient, setSelectedClient] = useState<ClientData | null>(null)
   const [clientDomains, setClientDomains] = useState<DomainData[]>([])
-  const [activeTab, setActiveTab] = useState<'chat' | 'settings'>('chat')
+  const [activeTab, setActiveTab] = useState<'chat' | 'settings' | 'global'>('global')
   
   // Chat Engine State
   const [messages, setMessages] = useState<any[]>([])
@@ -58,6 +68,10 @@ export default function SupportDesk() {
   const [loading, setLoading] = useState(true)
   const [isAuthorized, setIsAuthorized] = useState(false)
   const [isActionLoading, setIsActionLoading] = useState(false)
+
+  // Dynamic Pricing State
+  const [systemPricing, setSystemPricing] = useState<PricingData[]>([])
+  const [isPricingSaving, setIsPricingSaving] = useState(false)
 
   // Custom Override Modal State
   const [modal, setModal] = useState<ModalState>({
@@ -87,6 +101,7 @@ export default function SupportDesk() {
 
       setIsAuthorized(true)
       fetchMasterDatabase()
+      fetchSystemPricing()
     }
     initializeAdmin()
   }, [router])
@@ -104,6 +119,33 @@ export default function SupportDesk() {
       console.error('SYSTEM ERROR: Failed to fetch client network.', error)
     } finally {
       setLoading(false)
+    }
+  }
+
+  const fetchSystemPricing = async () => {
+    try {
+      const res = await fetch('/api/admin/system-pricing')
+      const data = await res.json()
+      if (data.pricing) setSystemPricing(data.pricing)
+    } catch (error) {
+      console.error("Failed to load pricing data.", error)
+    }
+  }
+
+  const handleSavePricing = async () => {
+    setIsPricingSaving(true)
+    try {
+      const res = await fetch('/api/admin/system-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: systemPricing })
+      })
+      if (!res.ok) throw new Error("Failed to sync new pricing to database.")
+      alert("Global System Pricing Successfully Updated!")
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsPricingSaving(false)
     }
   }
 
@@ -185,7 +227,7 @@ export default function SupportDesk() {
     if (type === 'balance') {
       title = 'Execute Financial Override'
       placeholder = 'Enter new USDT balance'
-      currentValue = selectedClient.balance.toString()
+      currentValue = selectedClient.balance?.toString() || '0'
     } else if (type === 'plan') {
       title = 'Execute Subscription Override'
       placeholder = 'Select Tier'
@@ -216,7 +258,6 @@ export default function SupportDesk() {
     setIsActionLoading(true)
 
     try {
-      // Route ALL updates through the unified update-client endpoint
       const res = await fetch('/api/admin/update-client', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -232,14 +273,14 @@ export default function SupportDesk() {
         throw new Error(err.error || 'Database rejection.')
       }
 
-      // Update local state based on what changed
       if (modal.type === 'balance') {
         const newBalance = parseFloat(modalInput)
         setClients(clients.map(c => c.id === selectedClient.id ? { ...c, balance: newBalance } : c))
         setSelectedClient({ ...selectedClient, balance: newBalance })
       } else if (modal.type === 'plan') {
-        setClients(clients.map(c => c.id === selectedClient.id ? { ...c, active_plan_id: modalInput === 'none' ? null : modalInput } : c))
-        setSelectedClient({ ...selectedClient, active_plan_id: modalInput === 'none' ? null : modalInput })
+        const newPlan = modalInput === 'none' ? null : modalInput
+        setClients(clients.map(c => c.id === selectedClient.id ? { ...c, active_plan_id: newPlan } : c))
+        setSelectedClient({ ...selectedClient, active_plan_id: newPlan })
       } else if (modal.type === 'email') {
         setClients(clients.map(c => c.id === selectedClient.id ? { ...c, email: modalInput } : c))
         setSelectedClient({ ...selectedClient, email: modalInput })
@@ -293,9 +334,9 @@ export default function SupportDesk() {
                     className="w-full bg-[#020106] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#9b5de5] focus:ring-1 focus:ring-[#9b5de5]/50 transition-all font-mono text-sm"
                   >
                     <option value="none">Revoke Access (No Plan)</option>
-                    <option value="starter">Starter Plan</option>
-                    <option value="pro">Pro Plan</option>
-                    <option value="enterprise">Scale / Enterprise Plan</option>
+                    {systemPricing.map(plan => (
+                      <option key={plan.id} value={plan.id}>{plan.name}</option>
+                    ))}
                   </select>
                 ) : (
                   <input
@@ -337,9 +378,16 @@ export default function SupportDesk() {
           <h1 className="font-['Syne',sans-serif] text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">
             SUPPORT HQ
           </h1>
-          <p className="text-[#8a80a0] text-[10px] font-bold uppercase tracking-[0.2em] mt-2">
+          <p className="text-[#8a80a0] text-[10px] font-bold uppercase tracking-[0.2em] mt-2 mb-6">
             Active Network: <span className="text-white">{clients.length} Nodes</span>
           </p>
+
+          <button 
+            onClick={() => { setActiveTab('global'); setSelectedClient(null); }} 
+            className={`w-full py-3 rounded-xl border font-bold text-xs uppercase tracking-widest transition-all ${activeTab === 'global' ? 'bg-[#9b5de5]/20 border-[#9b5de5]/50 text-[#9b5de5]' : 'bg-white/5 border-white/10 text-[#8a80a0] hover:text-white'}`}
+          >
+            Global Settings & Pricing
+          </button>
           
           <div className="mt-6 relative">
             <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-[#8a80a0]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
@@ -361,10 +409,10 @@ export default function SupportDesk() {
             filteredClients.map(client => (
               <div 
                 key={client.id} 
-                onClick={() => setSelectedClient(client)}
-                className={`p-4 rounded-xl cursor-pointer transition-all border group ${selectedClient?.id === client.id ? 'bg-[#9b5de5]/10 border-[#9b5de5]/50 shadow-[inset_0_0_20px_rgba(155,93,229,0.1)]' : 'bg-white/[0.02] border-transparent hover:bg-white/[0.05]'}`}
+                onClick={() => { setSelectedClient(client); setActiveTab('settings'); }}
+                className={`p-4 rounded-xl cursor-pointer transition-all border group ${selectedClient?.id === client.id && activeTab !== 'global' ? 'bg-[#9b5de5]/10 border-[#9b5de5]/50 shadow-[inset_0_0_20px_rgba(155,93,229,0.1)]' : 'bg-white/[0.02] border-transparent hover:bg-white/[0.05]'}`}
               >
-                <div className={`font-bold text-sm truncate transition-colors ${selectedClient?.id === client.id ? 'text-white' : 'text-[#8a80a0] group-hover:text-white'}`}>
+                <div className={`font-bold text-sm truncate transition-colors ${selectedClient?.id === client.id && activeTab !== 'global' ? 'text-white' : 'text-[#8a80a0] group-hover:text-white'}`}>
                   {client.email}
                 </div>
                 <div className="flex justify-between items-center mt-3 text-xs">
@@ -383,7 +431,60 @@ export default function SupportDesk() {
 
       {/* ── RIGHT PANEL: MASTER CONTROL ── */}
       <div className="flex-1 flex flex-col h-full bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
-        {selectedClient ? (
+        
+        {/* VIEW: GLOBAL SETTINGS */}
+        {activeTab === 'global' && (
+          <div className="flex-1 overflow-y-auto p-10 custom-scrollbar">
+            <div className="max-w-5xl mx-auto">
+              <div className="flex justify-between items-end mb-10 border-b border-white/[0.05] pb-8">
+                <div>
+                  <h2 className="font-['Syne',sans-serif] text-3xl font-bold text-white mb-2 tracking-tight">Global Network Settings</h2>
+                  <p className="text-[#8a80a0] text-sm uppercase tracking-widest font-bold">Modify live subscription tiers and overage logic.</p>
+                </div>
+                <button 
+                  onClick={handleSavePricing} 
+                  disabled={isPricingSaving} 
+                  className="px-8 py-4 bg-gradient-to-r from-[#10b981] to-[#059669] text-black font-extrabold uppercase tracking-widest text-[11px] rounded-xl hover:scale-105 transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:opacity-50"
+                >
+                  {isPricingSaving ? 'Syncing to Database...' : 'Deploy Global Update'}
+                </button>
+              </div>
+
+              <div className="space-y-6">
+                {systemPricing.length === 0 ? (
+                  <div className="text-[#8a80a0] text-center mt-20 animate-pulse">Initializing remote pricing connection...</div>
+                ) : (
+                  systemPricing.map((plan, index) => (
+                    <div key={plan.id} className="bg-black/60 border border-white/[0.08] p-8 rounded-3xl flex flex-wrap md:flex-nowrap gap-8 items-center shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]">
+                      <div className="w-full md:w-1/4">
+                        <label className="text-[10px] text-[#8a80a0] uppercase tracking-widest mb-2 block font-bold">Plan Identifier</label>
+                        <input type="text" value={plan.name} onChange={(e) => { const newPricing = [...systemPricing]; newPricing[index].name = e.target.value; setSystemPricing(newPricing) }} className="w-full bg-[#020106] border border-white/10 p-4 rounded-xl font-bold text-white focus:border-[#9b5de5] outline-none transition-all" />
+                      </div>
+                      
+                      <div className="w-full md:w-1/4">
+                        <label className="text-[10px] text-[#10b981] uppercase tracking-widest mb-2 block font-bold">Cost (USDT)</label>
+                        <input type="number" value={plan.price} onChange={(e) => { const newPricing = [...systemPricing]; newPricing[index].price = Number(e.target.value); setSystemPricing(newPricing) }} className="w-full bg-[#10b981]/10 border border-[#10b981]/30 text-[#10b981] p-4 rounded-xl font-mono font-bold outline-none focus:border-[#10b981]" />
+                      </div>
+
+                      <div className="w-full md:w-1/4">
+                        <label className="text-[10px] text-[#9b5de5] uppercase tracking-widest mb-2 block font-bold">Max Email Output</label>
+                        <input type="number" value={plan.email_limit} onChange={(e) => { const newPricing = [...systemPricing]; newPricing[index].email_limit = Number(e.target.value); setSystemPricing(newPricing) }} className="w-full bg-[#9b5de5]/10 border border-[#9b5de5]/30 text-[#9b5de5] p-4 rounded-xl font-mono outline-none focus:border-[#9b5de5]" />
+                      </div>
+
+                      <div className="w-full md:w-1/4">
+                        <label className="text-[10px] text-orange-400 uppercase tracking-widest mb-2 block font-bold">Overage Burn Rate</label>
+                        <input type="number" step="0.001" value={plan.overage_cost} onChange={(e) => { const newPricing = [...systemPricing]; newPricing[index].overage_cost = Number(e.target.value); setSystemPricing(newPricing) }} className="w-full bg-orange-500/10 border border-orange-500/30 text-orange-400 p-4 rounded-xl font-mono outline-none focus:border-orange-500" />
+                      </div>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* VIEW: CLIENT SELECTED */}
+        {selectedClient && activeTab !== 'global' && (
           <>
             <div className="p-8 border-b border-white/[0.08] bg-black/40 backdrop-blur-xl flex flex-col gap-6 z-10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] shrink-0">
               <div className="flex justify-between items-start">
@@ -562,7 +663,7 @@ export default function SupportDesk() {
                   <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-8 backdrop-blur-md">
                     <div className="flex justify-between items-center mb-8">
                       <h3 className="font-['Syne',sans-serif] text-sm font-bold text-[#9b5de5] uppercase tracking-[0.2em] flex items-center gap-3">
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9"></path></svg>
                         Network Architecture (DNS Inspector)
                       </h3>
                       <div className="text-[10px] font-bold text-[#8a80a0] uppercase tracking-widest border border-white/[0.1] px-3 py-1.5 rounded-lg bg-white/[0.02]">
@@ -635,20 +736,6 @@ export default function SupportDesk() {
               </div>
             )}
           </>
-        ) : (
-          <div className="flex-1 flex flex-col items-center justify-center text-[#8a80a0] relative overflow-hidden">
-            <div className="absolute inset-0 bg-[url('/grid.svg')] opacity-[0.02] pointer-events-none"></div>
-            <div className="w-[600px] h-[600px] bg-[#9b5de5]/5 blur-[120px] rounded-full absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 pointer-events-none"></div>
-            
-            <div className="relative z-10 flex flex-col items-center animate-[fadeUp_0.8s_ease-out]">
-              <div className="w-24 h-24 rounded-full border border-white/[0.05] flex items-center justify-center mb-8 bg-black/40 shadow-[0_0_50px_rgba(0,0,0,0.5)] relative">
-                <div className="absolute inset-0 rounded-full border border-[#9b5de5]/20 animate-ping opacity-20"></div>
-                <svg className="w-10 h-10 opacity-40 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z"></path></svg>
-              </div>
-              <p className="font-['Syne',sans-serif] text-3xl font-extrabold text-white mb-3 tracking-tight">Awaiting Target Selection</p>
-              <p className="font-mono text-xs tracking-[0.2em] uppercase text-[#8a80a0]">Initialize connection by selecting a node from the network array on the left.</p>
-            </div>
-          </div>
         )}
       </div>
     </main>
