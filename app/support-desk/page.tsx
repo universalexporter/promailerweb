@@ -124,6 +124,7 @@ export default function SupportDesk() {
   const fetchSystemPricing = async () => {
     try {
       const res = await fetch('/api/admin/system-pricing')
+      if (!res.ok) return // Silently fail to trigger the auto-recovery UI
       const data = await res.json()
       if (data.pricing) setSystemPricing(data.pricing)
     } catch (error) {
@@ -143,6 +144,28 @@ export default function SupportDesk() {
       alert("Global System Pricing Successfully Updated!")
     } catch (error: any) {
       alert(`Error: ${error.message}`)
+    } finally {
+      setIsPricingSaving(false)
+    }
+  }
+
+  // 🚨 AUTO-RECOVERY FUNCTION 🚨
+  const handleSeedPricing = async () => {
+    setIsPricingSaving(true)
+    const defaultTiers = [
+      { id: 'starter', name: 'Starter Plan', price: 250, email_limit: 20000, overage_cost: 0.006, features: ['20k Monthly Limit', 'Standard API Access', 'Overage: 0.006 USDT/email'] },
+      { id: 'pro', name: 'Pro Plan', price: 600, email_limit: 100000, overage_cost: 0.006, features: ['100k Monthly Limit', 'High-Speed Routing', 'Dedicated Account Manager'] },
+      { id: 'enterprise', name: 'Scale Plan', price: 1500, email_limit: 500000, overage_cost: 0.006, features: ['500k Monthly Limit', 'Custom Dedicated IPs', 'Priority 24/7 Support'] }
+    ]
+    try {
+      await fetch('/api/admin/system-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: defaultTiers })
+      })
+      fetchSystemPricing() // Reload the UI
+    } catch (e) {
+      alert("CRITICAL ERROR: Make sure /api/admin/system-pricing/route.ts exists!")
     } finally {
       setIsPricingSaving(false)
     }
@@ -372,6 +395,7 @@ export default function SupportDesk() {
 
       {/* ── LEFT PANEL: CLIENT NETWORK ── */}
       <div className="w-[380px] shrink-0 border-r border-white/[0.08] bg-[#070512] flex flex-col h-full z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
+        
         <div className="p-8 border-b border-white/[0.08] bg-black/40 shrink-0">
           <h1 className="font-['Syne',sans-serif] text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">
             SUPPORT HQ
@@ -439,18 +463,27 @@ export default function SupportDesk() {
                   <h2 className="font-['Syne',sans-serif] text-3xl font-bold text-white mb-2 tracking-tight">Global Network Settings</h2>
                   <p className="text-[#8a80a0] text-sm uppercase tracking-widest font-bold">Modify live subscription tiers and overage logic.</p>
                 </div>
-                <button 
-                  onClick={handleSavePricing} 
-                  disabled={isPricingSaving} 
-                  className="px-8 py-4 bg-gradient-to-r from-[#10b981] to-[#059669] text-black font-extrabold uppercase tracking-widest text-[11px] rounded-xl hover:scale-105 transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:opacity-50"
-                >
-                  {isPricingSaving ? 'Syncing to Database...' : 'Deploy Global Update'}
-                </button>
+                {systemPricing.length > 0 && (
+                  <button 
+                    onClick={handleSavePricing} 
+                    disabled={isPricingSaving} 
+                    className="px-8 py-4 bg-gradient-to-r from-[#10b981] to-[#059669] text-black font-extrabold uppercase tracking-widest text-[11px] rounded-xl hover:scale-105 transition-all shadow-[0_0_30px_rgba(16,185,129,0.3)] disabled:opacity-50"
+                  >
+                    {isPricingSaving ? 'Syncing to Database...' : 'Deploy Global Update'}
+                  </button>
+                )}
               </div>
 
               <div className="space-y-6">
                 {systemPricing.length === 0 ? (
-                  <div className="text-[#8a80a0] text-center mt-20 animate-pulse">Initializing remote pricing connection...</div>
+                  <div className="bg-black/60 border border-white/[0.08] p-12 rounded-3xl flex flex-col items-center justify-center text-center shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]">
+                    <svg className="w-12 h-12 text-[#8a80a0] opacity-50 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="1.5" d="M12 9v2m0 4h.01m-6.938 4h13.856c1.54 0 2.502-1.667 1.732-3L13.732 4c-.77-1.333-2.694-1.333-3.464 0L3.34 16c-.77 1.333.192 3 1.732 3z"></path></svg>
+                    <h3 className="text-xl font-bold text-white mb-2">Pricing Database Empty</h3>
+                    <p className="text-[#8a80a0] text-sm max-w-md mb-8">The system_pricing table returned no data. Ensure your API route exists, or click below to inject the default enterprise plans directly into your database.</p>
+                    <button onClick={handleSeedPricing} disabled={isPricingSaving} className="px-10 py-4 bg-gradient-to-r from-[#9b5de5] to-[#6c3b9c] text-white font-extrabold uppercase tracking-widest text-xs rounded-xl shadow-[0_0_30px_rgba(155,93,229,0.4)] disabled:opacity-50 transition-all hover:scale-105">
+                      {isPricingSaving ? 'Injecting Data...' : 'Initialize Default Pricing Database'}
+                    </button>
+                  </div>
                 ) : (
                   systemPricing.map((plan, index) => (
                     <div key={plan.id} className="bg-black/60 border border-white/[0.08] p-8 rounded-3xl flex flex-wrap md:flex-nowrap gap-8 items-center shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]">
