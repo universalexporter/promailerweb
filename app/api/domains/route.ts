@@ -9,14 +9,13 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    // Notice we receive domainId (which is the Resend ID) and supabaseRecordId from the frontend
-    const { apiKey, domainId, supabaseRecordId } = body
+    const { apiKey, domainName } = body
 
-    if (!apiKey || !domainId || !supabaseRecordId) {
-      return NextResponse.json({ error: 'Missing required parameters.' }, { status: 400 })
+    if (!apiKey || !domainName) {
+      return NextResponse.json({ error: 'Missing API Key or Domain Name' }, { status: 400 })
     }
 
-    // 1. Authenticate the Client via your Database
+    // 1. Authenticate the Client
     const { data: profile, error: profileError } = await supabaseAdmin
       .from('profiles')
       .select('id')
@@ -27,58 +26,51 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Invalid API Key' }, { status: 401 })
     }
 
-    // 2. Trigger the Verification inside Resend
-    // This tells Resend to look at the DNS records right now.
-    const verifyResponse = await fetch(`https://api.resend.com/domains/${domainId}/verify`, {
+    // 2. Request new DNS identity from Resend
+    const resendResponse = await fetch('https://api.resend.com/domains', {
       method: 'POST',
       headers: {
-        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`, // Using your Master Resend Key
+        'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Type': 'application/json'
-      }
+      },
+      body: JSON.stringify({
+        name: domainName
+      })
     })
 
-    if (!verifyResponse.ok) {
-        const errorData = await verifyResponse.json()
-        console.error('Resend Verify Trigger Error:', errorData)
-        return NextResponse.json({ error: errorData.message || 'Failed to trigger verification with Resend.' }, { status: verifyResponse.status })
+    const resendData = await resendResponse.json()
+
+    if (!resendResponse.ok) {
+      console.error('Resend Domain Error:', resendData)
+      return NextResponse.json({ error: 'Failed to register domain with Resend' }, { status: 502 })
     }
 
-    // 3. Optional but highly recommended: Fetch the updated status from Resend immediately after triggering
-    const statusResponse = await fetch(`https://api.resend.com/domains/${domainId}`, {
-        method: 'GET',
-        headers: {
-          'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-          'Content-Type': 'application/json'
-        }
-    })
-
-    let updatedStatus = 'pending_verification' // default fallback
-    if (statusResponse.ok) {
-        const domainData = await statusResponse.json()
-        // Resend returns statuses like 'pending', 'verified', 'failed'
-        updatedStatus = domainData.status === 'verified' ? 'verified' : 'pending_verification'
-    }
-
-    // 4. Update the local Supabase Database so the client UI reacts
+    // 3. Save the pending domain and DNS records to your database
     const { error: dbError } = await supabaseAdmin
       .from('client_domains')
-      .update({ status: updatedStatus })
-      .eq('id', supabaseRecordId)
-      .eq('user_id', profile.id) // Extra security check
+      .insert({
+        user_id: profile.id,
+        domain_name: domainName,
+        resend_domain_id: resendData.id,
+        status: 'pending',
+        dns_records: resendData.records
+      })
 
     if (dbError) {
       console.error('Database Error:', dbError)
-      return NextResponse.json({ error: 'Failed to update domain status in ledger.' }, { status: 500 })
+      return NextResponse.json({ error: 'Failed to save domain to ledger' }, { status: 500 })
     }
 
-    return NextResponse.json({ 
-        success: true, 
-        message: 'Verification triggered successfully.',
-        status: updatedStatus 
+    // 4. Return the DNS records so the client dashboard can display them
+    return NextResponse.json({
+      success: true,
+      domain: domainName,
+      status: 'pending',
+      records: resendData.records
     }, { status: 200 })
 
   } catch (error) {
-    console.error('Domain Verification Error:', error)
+    console.error('Domain Registration Error:', error)
     return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
   }
 }
