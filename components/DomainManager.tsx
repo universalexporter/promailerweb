@@ -11,7 +11,10 @@ const supabase = createClient(
 const Icons = {
   Copy: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" /></svg>,
   Check: () => <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7" /></svg>,
-  Refresh: () => <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>
+  Refresh: () => <svg className="w-4 h-4 animate-spin" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" /></svg>,
+  Play: () => <svg className="w-4 h-4 mr-2 inline-block" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>,
+  Globe: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9m-9 9a9 9 0 019-9" /></svg>,
+  Close: () => <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
 }
 
 export default function DomainManager({ apiKey }: { apiKey: string }) {
@@ -21,6 +24,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
   const [domains, setDomains] = useState<any[]>([])
   const [verifyingId, setVerifyingId] = useState<string | null>(null)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
+  const [showTutorial, setShowTutorial] = useState(false)
 
   useEffect(() => {
     fetchDomains()
@@ -79,6 +83,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
         const data = await res.json()
         if (!res.ok) throw new Error(data.error)
         
+        setShowTutorial(true)
         fetchDomains()
     } catch (err: any) {
         alert(`Verification Error: ${err.message}`)
@@ -105,21 +110,40 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-[#9b5de5]/10 blur-[100px] rounded-full pointer-events-none" />
 
       <div className="relative z-10 max-w-4xl">
-        <h2 className="font-['Syne',sans-serif] text-white font-extrabold text-2xl mb-2 tracking-tight">Sender Identity</h2>
-        <p className="text-sm text-[#8a80a0] leading-relaxed mb-8 tracking-wide">
-          Connect your custom domain to securely route emails without affecting the master network reputation.
-        </p>
+        
+        <div className="flex justify-between items-start mb-8">
+            <div>
+                <h2 className="font-['Syne',sans-serif] text-white font-extrabold text-2xl mb-2 tracking-tight">Sender Identity</h2>
+                <p className="text-sm text-[#8a80a0] leading-relaxed tracking-wide">
+                Connect your custom domain to securely route emails without affecting the master network reputation.
+                </p>
+            </div>
+            {domains.length > 0 && (
+                <button 
+                    onClick={() => setShowTutorial(!showTutorial)}
+                    className="flex items-center px-4 py-2 bg-white/5 text-[#8a80a0] hover:text-white border border-white/10 rounded-lg text-xs font-bold transition-colors"
+                >
+                    <Icons.Play /> {showTutorial ? 'Hide Tutorial' : 'Tutorial'}
+                </button>
+            )}
+        </div>
 
         {/* Input Section */}
         <div className="flex flex-col sm:flex-row gap-4 mb-8">
-          <input 
-            type="text" 
-            placeholder={isDomainLocked ? "Domain Identity Locked" : "e.g. your-startup.com"}
-            value={domainInput}
-            onChange={(e) => setDomainInput(e.target.value)}
-            disabled={loading || isDomainLocked}
-            className={`flex-1 bg-black/40 rounded-xl px-6 py-4 text-white font-mono text-sm transition-all outline-none ${isDomainLocked ? 'border border-transparent opacity-50 cursor-not-allowed' : 'border border-white/[0.08] focus:border-[#9b5de5]/50 focus:ring-1 focus:ring-[#9b5de5]/50 shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)]'}`}
-          />
+          <div className="flex-1 relative">
+            <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#8a80a0]">
+                <Icons.Globe />
+            </div>
+            <input 
+                type="text" 
+                placeholder={isDomainLocked ? "Domain Identity Locked" : "e.g. your-startup.com"}
+                value={domainInput}
+                onChange={(e) => setDomainInput(e.target.value)}
+                disabled={loading || isDomainLocked}
+                className={`w-full flex-1 bg-black/40 rounded-xl px-6 py-4 pl-12 text-white font-mono text-sm transition-all outline-none ${isDomainLocked ? 'border border-transparent opacity-50 cursor-not-allowed' : 'border border-white/[0.08] focus:border-[#9b5de5]/50 focus:ring-1 focus:ring-[#9b5de5]/50 shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)]'}`}
+            />
+          </div>
+          
           <button 
             onClick={handleAddDomain}
             disabled={loading || !domainInput || isDomainLocked}
@@ -198,9 +222,9 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                                 title="Copy value"
                                 >
                                 {copiedIndex === index ? (
-                                    <svg className="w-4 h-4 text-[#10b981]" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                    <Icons.Check />
                                 ) : (
-                                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z"></path></svg>
+                                    <Icons.Copy />
                                 )}
                                 </button>
                             </div>
@@ -216,45 +240,49 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                 </div>
             ))}
 
-            {/* Simplified Guide */}
-            <div className="bg-black/60 border border-white/[0.06] rounded-2xl p-6 shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)] mt-8">
-              <h4 className="font-['Syne',sans-serif] text-white font-bold text-sm mb-4">How to verify your domain</h4>
-              <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+            {/* Simplified Guide (Toggled) */}
+            {showTutorial && (
+                <div className="bg-black/60 border border-white/[0.06] rounded-2xl p-6 shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)] mt-8 animate-[fadeUp_0.3s_ease-out]">
+                <div className="flex justify-between items-center mb-4">
+                    <h4 className="font-['Syne',sans-serif] text-white font-bold text-sm">How to verify your domain</h4>
+                    <button onClick={() => setShowTutorial(false)} className="text-[#8a80a0] hover:text-white"><Icons.Close /></button>
+                </div>
                 
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#9b5de5]/20 text-[#9b5de5] font-bold text-[10px] border border-[#9b5de5]/30">1</span>
-                    <span className="font-bold text-white text-xs">Log In</span>
-                  </div>
-                  <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Open GoDaddy, Namecheap, or wherever you bought your domain.</p>
-                </div>
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                    <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#9b5de5]/20 text-[#9b5de5] font-bold text-[10px] border border-[#9b5de5]/30">1</span>
+                        <span className="font-bold text-white text-xs">Log In</span>
+                    </div>
+                    <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Open GoDaddy, Namecheap, or wherever you bought your domain.</p>
+                    </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#9b5de5]/20 text-[#9b5de5] font-bold text-[10px] border border-[#9b5de5]/30">2</span>
-                    <span className="font-bold text-white text-xs">Find DNS</span>
-                  </div>
-                  <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Navigate to the <strong>DNS Settings</strong> or <strong>Advanced DNS</strong> page.</p>
-                </div>
+                    <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#9b5de5]/20 text-[#9b5de5] font-bold text-[10px] border border-[#9b5de5]/30">2</span>
+                        <span className="font-bold text-white text-xs">Find DNS</span>
+                    </div>
+                    <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Navigate to the <strong>DNS Settings</strong> or <strong>Advanced DNS</strong> page.</p>
+                    </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#9b5de5]/20 text-[#9b5de5] font-bold text-[10px] border border-[#9b5de5]/30">3</span>
-                    <span className="font-bold text-white text-xs">Add Records</span>
-                  </div>
-                  <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Click "Add New Record". Paste the Type, Name, and Value from the table above.</p>
-                </div>
+                    <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#9b5de5]/20 text-[#9b5de5] font-bold text-[10px] border border-[#9b5de5]/30">3</span>
+                        <span className="font-bold text-white text-xs">Add Records</span>
+                    </div>
+                    <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Click "Add New Record". Paste the Type, Name, and Value from the table above.</p>
+                    </div>
 
-                <div>
-                  <div className="flex items-center gap-2 mb-2">
-                    <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#10b981]/20 text-[#10b981] font-bold text-[10px] border border-[#10b981]/30">4</span>
-                    <span className="font-bold text-white text-xs">Wait</span>
-                  </div>
-                  <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Click Verify above. It takes about 15-30 minutes for the internet to update.</p>
+                    <div>
+                    <div className="flex items-center gap-2 mb-2">
+                        <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[#10b981]/20 text-[#10b981] font-bold text-[10px] border border-[#10b981]/30">4</span>
+                        <span className="font-bold text-white text-xs">Wait</span>
+                    </div>
+                    <p className="text-[11px] text-[#8a80a0] leading-relaxed pl-7">Click Verify above. It takes about 15-30 minutes for the internet to update.</p>
+                    </div>
                 </div>
-
-              </div>
-            </div>
+                </div>
+            )}
 
           </div>
         )}
