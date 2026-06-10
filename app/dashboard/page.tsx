@@ -15,36 +15,15 @@ const supabase = createClient(
 
 const NeuralBrainScene = dynamic(() => import('@/components/3d/NeuralBrainScene'), { ssr: false })
 
-// ─── 2. ENTERPRISE PRICING & TIERS ──────────────────────────────────────────
-const TIERS = [
-  { 
-    id: 'starter', 
-    name: 'Starter Plan', 
-    price: 250,
-    volume: '20,000 Emails',
-    limit: 20000,
-    features: ['20k Monthly Limit', 'Standard API Access', 'Overage: 0.006 USDT/email']
-  },
-  { 
-    id: 'pro', 
-    name: 'Pro Plan', 
-    price: 600,
-    volume: '100,000 Emails',
-    limit: 100000,
-    features: ['100k Monthly Limit', 'High-Speed Routing', 'Dedicated Account Manager'],
-    recommended: true
-  },
-  { 
-    id: 'enterprise', 
-    name: 'Scale Plan', 
-    price: 1500,
-    volume: '500,000 Emails',
-    limit: 500000,
-    features: ['500k Monthly Limit', 'Custom Dedicated IPs', 'Priority 24/7 Support']
-  }
-]
-
-const OVERAGE_COST_PER_EMAIL = 0.006 
+// ─── 2. DYNAMIC PRICING TYPES ───────────────────────────────────────────────
+type PricingData = {
+  id: string
+  name: string
+  price: number
+  email_limit: number
+  overage_cost: number
+  features: string[]
+}
 
 // ─── 3. ICONS LIBRARY (SVG) ─────────────────────────────────────────────────
 const Icons = {
@@ -71,6 +50,9 @@ export default function DashboardPage() {
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [showGuide, setShowGuide] = useState(false)
   const [isCheckingAuth, setIsCheckingAuth] = useState(true)
+  
+  // Dynamic Pricing State
+  const [dynamicTiers, setDynamicTiers] = useState<PricingData[]>([])
   
   // Dashboard Data State
   const [walletBalance, setWalletBalance] = useState<number>(0.00) 
@@ -115,10 +97,19 @@ export default function DashboardPage() {
       setUserEmail(session.user.email ?? 'Unknown User')
 
       try {
-        const [profileRes, walletRes] = await Promise.all([
+        // Fetch User Data AND Global Pricing Matrix Simultaneously
+        const [profileRes, walletRes, pricingRes] = await Promise.all([
           supabase.from('profiles').select('*').eq('id', session.user.id).single(),
-          supabase.from('wallets').select('balance').eq('user_id', session.user.id).single()
+          supabase.from('wallets').select('balance').eq('user_id', session.user.id).single(),
+          fetch('/api/admin/system-pricing').then(res => res.ok ? res.json() : { pricing: [] })
         ])
+
+        // Hydrate Dynamic Tiers
+        if (pricingRes.pricing && pricingRes.pricing.length > 0) {
+            setDynamicTiers(pricingRes.pricing)
+        } else {
+            console.warn("No pricing data found in global table.")
+        }
 
         if (profileRes.data) {
           setApiKey(profileRes.data.api_key)
@@ -195,7 +186,7 @@ export default function DashboardPage() {
     return () => clearInterval(interval);
   }, [expiresAtDate]);
 
-  // ─── 6. SUPPORT CHAT ENGINE (Unchanged) ───────────────────────────────────
+  // ─── 6. SUPPORT CHAT ENGINE ───────────────────────────────────────────────
   useEffect(() => {
     if (!userId) return
 
@@ -298,11 +289,18 @@ export default function DashboardPage() {
 
   if (isCheckingAuth) return <div className="min-h-screen bg-[#020106]" />
 
-  const availableOverageEmails = Math.floor(walletBalance / OVERAGE_COST_PER_EMAIL)
+  // Fallback to empty safe objects if dynamicTiers hasn't loaded yet to prevent crashing
+  const safeTiers = dynamicTiers.length > 0 ? dynamicTiers : []
+  // FIXED: Explicitly defined email_limit in the fallback object to satisfy TypeScript
+  const currentPlanObj = safeTiers.find(t => t.id === activePlanId) || safeTiers[0] || { id: 'none', name: 'Loading', price: 0, email_limit: 0, overage_cost: 0.0035, features: [] }
+  
+  const activeOverageCost = currentPlanObj.overage_cost || 0.0035
+  const availableOverageEmails = Math.floor(walletBalance / activeOverageCost)
   const isOutOfFunds = isAccountActive && walletBalance <= 0
-  const currentPlanObj = TIERS.find(t => t.id === activePlanId) || TIERS[0]
   const isPlanExpired = preciseCountdown === 'EXPIRED'
-  const usagePercentage = Math.min(100, (emailsSent / currentPlanObj.limit) * 100)
+  
+  // FIXED: Referenced email_limit instead of limit for the progress bar calculations
+  const usagePercentage = currentPlanObj.email_limit > 0 ? Math.min(100, (emailsSent / currentPlanObj.email_limit) * 100) : 0
 
   // ─── 9. MAIN UI RENDER ────────────────────────────────────────────────────
   return (
@@ -392,7 +390,7 @@ export default function DashboardPage() {
                   <div className="flex justify-between items-center text-[11px] font-bold text-white mb-5">
                     <span className="uppercase tracking-widest text-[#8a80a0]">Est. Capacity</span>
                     <span className="text-[#9b5de5] bg-[#9b5de5]/10 px-4 py-1.5 rounded-lg border border-[#9b5de5]/20 shadow-inner tracking-wider">
-                      + {(depositAmount / OVERAGE_COST_PER_EMAIL).toLocaleString()} emails
+                      + {Math.floor(depositAmount / activeOverageCost).toLocaleString()} emails
                     </span>
                   </div>
                   <div className="relative w-full h-3 bg-[#020106] rounded-full shadow-[inset_0_2px_4px_rgba(0,0,0,1)] border border-white/[0.02]">
@@ -465,7 +463,8 @@ export default function DashboardPage() {
 
                     <div className="mb-2 flex justify-between text-[11px] font-bold text-white">
                       <span className="uppercase tracking-widest text-[#8a80a0]">Monthly Usage</span>
-                      <span className="font-mono text-[#9b5de5]">{emailsSent.toLocaleString()} / {currentPlanObj.limit.toLocaleString()}</span>
+                      {/* FIXED: References email_limit safely to prevent errors */}
+                      <span className="font-mono text-[#9b5de5]">{emailsSent.toLocaleString()} / {currentPlanObj.email_limit?.toLocaleString()}</span>
                     </div>
                     <div className="relative w-full h-2 bg-[#020106] rounded-full shadow-inner border border-white/[0.05] overflow-hidden">
                       <div className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${usagePercentage > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5]'}`} style={{ width: `${usagePercentage}%` }} />
@@ -495,62 +494,76 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 
-              /* ── VIEW 2: PREMIUM CLASSY PLAN SELECTOR ── */
+              /* ── VIEW 2: DYNAMIC PRICING MATRIX SELECTOR ── */
                 <div className="flex-1 flex flex-col justify-between animate-[fadeUp_0.4s_ease-out]">
-                  <div className="flex flex-col gap-4 mb-8">
-                    {TIERS.map((tier) => {
-                      let displayPrice = tier.price;
-                      const isCurrentPlan = isAccountActive && currentPlanObj.id === tier.id;
-                      if (isUpgrading && !isCurrentPlan) displayPrice = Math.max(0, tier.price - currentPlanObj.price);
+                  
+                  {dynamicTiers.length === 0 ? (
+                    <div className="flex-1 flex items-center justify-center">
+                        <div className="text-center text-[#8a80a0] font-mono animate-pulse">Syncing dynamic global pricing...</div>
+                    </div>
+                  ) : (
+                    <div className="flex flex-col gap-4 mb-8">
+                        {dynamicTiers.map((tier) => {
+                        let displayPrice = tier.price;
+                        const isCurrentPlan = isAccountActive && currentPlanObj.id === tier.id;
+                        if (isUpgrading && !isCurrentPlan) displayPrice = Math.max(0, tier.price - currentPlanObj.price);
 
-                      const isSelected = selectedTier === tier.id;
-                      const isPro = tier.id === 'pro';
+                        const isSelected = selectedTier === tier.id;
+                        const isPro = tier.id === 'pro';
 
-                      return (
-                        <div 
-                          key={tier.id} onClick={() => !isCurrentPlan && setSelectedTier(tier.id)}
-                          className={`relative p-5 rounded-2xl transition-all duration-500 overflow-hidden cursor-pointer border ${
-                            isCurrentPlan ? 'bg-white/[0.02] border-white/5 opacity-50 cursor-not-allowed' : 
-                            isSelected ? 'bg-gradient-to-b from-[#150a25] to-[#0a0512] border-[#9b5de5]/60 shadow-[0_0_30px_rgba(155,93,229,0.2),inset_0_2px_20px_rgba(155,93,229,0.1)] transform scale-[1.02]' : 
-                            'bg-black/60 border-white/[0.06] hover:border-white/20'
-                          }`}
-                        >
-                          {/* Premium Glowing Accent */}
-                          {isSelected && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#9b5de5] to-transparent shadow-[0_0_10px_#9b5de5]" />}
-                          {isPro && !isCurrentPlan && <div className="absolute top-3 right-3 bg-[#9b5de5]/20 border border-[#9b5de5]/40 text-[#9b5de5] text-[8px] uppercase tracking-widest font-bold px-2 py-1 rounded-md shadow-[0_0_10px_rgba(155,93,229,0.2)]">Recommended</div>}
+                        return (
+                            <div 
+                            key={tier.id} onClick={() => !isCurrentPlan && setSelectedTier(tier.id)}
+                            className={`relative p-5 rounded-2xl transition-all duration-500 overflow-hidden cursor-pointer border ${
+                                isCurrentPlan ? 'bg-white/[0.02] border-white/5 opacity-50 cursor-not-allowed' : 
+                                isSelected ? 'bg-gradient-to-b from-[#150a25] to-[#0a0512] border-[#9b5de5]/60 shadow-[0_0_30px_rgba(155,93,229,0.2),inset_0_2px_20px_rgba(155,93,229,0.1)] transform scale-[1.02]' : 
+                                'bg-black/60 border-white/[0.06] hover:border-white/20'
+                            }`}
+                            >
+                            {isSelected && <div className="absolute top-0 left-0 w-full h-[1px] bg-gradient-to-r from-transparent via-[#9b5de5] to-transparent shadow-[0_0_10px_#9b5de5]" />}
+                            {isPro && !isCurrentPlan && <div className="absolute top-3 right-3 bg-[#9b5de5]/20 border border-[#9b5de5]/40 text-[#9b5de5] text-[8px] uppercase tracking-widest font-bold px-2 py-1 rounded-md shadow-[0_0_10px_rgba(155,93,229,0.2)]">Recommended</div>}
 
-                          <div className="flex justify-between items-start mb-4 relative z-10">
-                            <div>
-                              <div className={`font-['Syne',sans-serif] font-bold text-lg tracking-tight ${isSelected ? 'text-white' : 'text-[#8a80a0]'}`}>
-                                {tier.name} {isCurrentPlan && <span className="text-[10px] ml-2 font-mono text-[#8a80a0]">(Current)</span>}
-                              </div>
+                            <div className="flex justify-between items-start mb-4 relative z-10">
+                                <div>
+                                <div className={`font-['Syne',sans-serif] font-bold text-lg tracking-tight ${isSelected ? 'text-white' : 'text-[#8a80a0]'}`}>
+                                    {tier.name} {isCurrentPlan && <span className="text-[10px] ml-2 font-mono text-[#8a80a0]">(Current)</span>}
+                                </div>
+                                </div>
+                                <div className="text-right">
+                                <div className={`font-mono font-black text-xl tracking-tighter ${isSelected ? 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]' : 'text-[#6a6080]'}`}>
+                                    {isUpgrading ? (isCurrentPlan ? '-' : `+${displayPrice}`) : tier.price} <span className="text-xs font-['DM_Sans',sans-serif] text-[#8a80a0]">USDT</span>
+                                </div>
+                                </div>
                             </div>
-                            <div className="text-right">
-                              <div className={`font-mono font-black text-xl tracking-tighter ${isSelected ? 'text-white drop-shadow-[0_0_10px_rgba(255,255,255,0.3)]' : 'text-[#6a6080]'}`}>
-                                {isUpgrading ? (isCurrentPlan ? '-' : `+${displayPrice}`) : tier.price} <span className="text-xs font-['DM_Sans',sans-serif] text-[#8a80a0]">USDT</span>
-                              </div>
-                            </div>
-                          </div>
 
-                          <ul className="space-y-2 mt-4 border-t border-white/[0.05] pt-4 relative z-10">
-                            {tier.features.map((feat, i) => (
-                              <li key={i} className={`text-[11px] uppercase tracking-wider flex items-center gap-2 font-bold ${isSelected ? 'text-[#c8b0e0]' : 'text-[#6a6080]'}`}>
-                                <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#9b5de5] shadow-[0_0_5px_#9b5de5]' : 'bg-[#4a4060]'}`} /> {feat}
-                              </li>
-                            ))}
-                          </ul>
-                        </div>
-                      )
-                    })}
-                  </div>
+                            {/* Features list safely mapped */}
+                            <ul className="space-y-2 mt-4 border-t border-white/[0.05] pt-4 relative z-10">
+                                <li className={`text-[11px] uppercase tracking-wider flex items-center gap-2 font-bold ${isSelected ? 'text-[#c8b0e0]' : 'text-[#6a6080]'}`}>
+                                   {/* FIXED: References email_limit correctly below */}
+                                   <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#9b5de5] shadow-[0_0_5px_#9b5de5]' : 'bg-[#4a4060]'}`} /> {tier.email_limit?.toLocaleString()} Monthly Limit
+                                </li>
+                                <li className={`text-[11px] uppercase tracking-wider flex items-center gap-2 font-bold ${isSelected ? 'text-[#c8b0e0]' : 'text-[#6a6080]'}`}>
+                                   <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#9b5de5] shadow-[0_0_5px_#9b5de5]' : 'bg-[#4a4060]'}`} /> Overage: {tier.overage_cost} USDT/email
+                                </li>
+                                {tier.features && tier.features.map((feat, i) => (
+                                <li key={i} className={`text-[11px] uppercase tracking-wider flex items-center gap-2 font-bold ${isSelected ? 'text-[#c8b0e0]' : 'text-[#6a6080]'}`}>
+                                    <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#9b5de5] shadow-[0_0_5px_#9b5de5]' : 'bg-[#4a4060]'}`} /> {feat}
+                                </li>
+                                ))}
+                            </ul>
+                            </div>
+                        )
+                        })}
+                    </div>
+                  )}
 
                   <button 
                     onClick={() => {
-                      const selectedPlanObj = TIERS.find(t => t.id === selectedTier) || TIERS[1];
+                      const selectedPlanObj = dynamicTiers.find(t => t.id === selectedTier) || dynamicTiers[0];
                       let checkoutPrice = isUpgrading ? Math.max(0, selectedPlanObj.price - currentPlanObj.price) : selectedPlanObj.price;
                       handleCheckout(checkoutPrice, `${selectedPlanObj.name} ${isUpgrading ? 'Upgrade' : 'Subscription'}`, 'activation');
                     }}
-                    disabled={isProcessingCheckout || (isUpgrading && selectedTier === currentPlanObj.id)}
+                    disabled={dynamicTiers.length === 0 || isProcessingCheckout || (isUpgrading && selectedTier === currentPlanObj.id)}
                     className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] disabled:opacity-50 mt-auto shrink-0 shadow-[0_10px_40px_rgba(155,93,229,0.2)]"
                   >
                     <span className="absolute inset-0 bg-gradient-to-r from-[#9b5de5] via-[#6c3b9c] to-[#9b5de5] opacity-100 transition-opacity duration-300" />
@@ -566,7 +579,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        {/* ── GLOBAL DESKTOP ENGINE DOWNLOAD (Moved Outside Plan Lock) ── */}
+        {/* ── GLOBAL DESKTOP ENGINE DOWNLOAD ── */}
         <div className="mt-10 grid grid-cols-1 md:grid-cols-2 gap-6 bg-[#070512] border border-white/[0.08] rounded-3xl p-8 shadow-[0_20px_50px_rgba(0,0,0,0.5)] relative overflow-hidden">
           <div className="absolute -top-32 -left-32 w-64 h-64 bg-[#3b82f6]/10 blur-[80px] rounded-full pointer-events-none" />
           
