@@ -9,10 +9,10 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { apiKey, domainName } = body
+    const { apiKey, domainName, userId } = body
 
-    if (!apiKey || !domainName) {
-      return NextResponse.json({ error: 'Missing API Key or Domain Name' }, { status: 400 })
+    if (!apiKey || !domainName || !userId) {
+      return NextResponse.json({ error: 'Missing API Key, Domain Name, or User ID' }, { status: 400 })
     }
 
     // 1. Authenticate the Client
@@ -22,8 +22,8 @@ export async function POST(req: Request) {
       .eq('api_key', apiKey)
       .single()
 
-    if (profileError || !profile) {
-      return NextResponse.json({ error: 'Invalid API Key' }, { status: 401 })
+    if (profileError || !profile || profile.id !== userId) {
+      return NextResponse.json({ error: 'Invalid API Key or Identity mismatch' }, { status: 401 })
     }
 
     // 2. Request new DNS identity from Resend
@@ -45,7 +45,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to register domain with Resend' }, { status: 502 })
     }
 
-    // 3. Save the pending domain and DNS records to your database
+    // --- THIS IS THE FIX ---
+    // 3. Inject the mandatory DMARC record into Resend's records array
+    const completeRecords = [
+      ...resendData.records,
+      {
+        record: 'TXT',
+        type: 'TXT',
+        name: '_dmarc',
+        value: 'v=DMARC1; p=none;',
+        priority: null
+      }
+    ]
+
+    // 4. Save the pending domain and the COMPLETE DNS records to your database
     const { error: dbError } = await supabaseAdmin
       .from('client_domains')
       .insert({
@@ -53,7 +66,7 @@ export async function POST(req: Request) {
         domain_name: domainName,
         resend_domain_id: resendData.id,
         status: 'pending',
-        dns_records: resendData.records
+        dns_records: completeRecords // Saving the 4 records to Supabase here!
       })
 
     if (dbError) {
@@ -61,12 +74,10 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Failed to save domain to ledger' }, { status: 500 })
     }
 
-    // 4. Return the DNS records so the client dashboard can display them
     return NextResponse.json({
       success: true,
       domain: domainName,
-      status: 'pending',
-      records: resendData.records
+      status: 'pending'
     }, { status: 200 })
 
   } catch (error) {
