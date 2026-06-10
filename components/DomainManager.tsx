@@ -40,13 +40,13 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
     if (data) setDomains(data)
   }
 
-  const handleAddDomain = async () => {
+  const handleAddDomain = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault()
     if (!domainInput || domains.length > 0) return
     setLoading(true)
     setError('')
     
     try {
-      // 1. Fetch the user session
       const { data: { session } } = await supabase.auth.getSession()
       if (!session) throw new Error("Unauthorized: Please log in again.")
 
@@ -56,7 +56,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
         body: JSON.stringify({ 
           apiKey: apiKey, 
           domainName: domainInput.toLowerCase().trim(),
-          userId: session.user.id // <-- THIS FIXES THE REGISTRATION ERROR
+          userId: session.user.id
         })
       })
 
@@ -82,13 +82,19 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
         const res = await fetch('/api/domains/verify', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ domainId: domainId }) // <-- MATCHES YOUR BACKEND
+            body: JSON.stringify({ domainId: domainId })
         })
         
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || data.message)
         
-        setShowTutorial(true)
+        // SMART SYNC: React to the status returned from the backend
+        if (data.status === 'active' || data.status === 'verified') {
+            setShowTutorial(false) // Hide tutorial if verified
+        } else {
+            setShowTutorial(true) // Show tutorial if still pending
+        }
+        
         fetchDomains()
     } catch (err: any) {
         alert(`Verification Error: ${err.message}`)
@@ -134,7 +140,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
         </div>
 
         {/* Input Section */}
-        <div className="flex flex-col sm:flex-row gap-4 mb-8">
+        <form onSubmit={handleAddDomain} className="flex flex-col sm:flex-row gap-4 mb-8">
           <div className="flex-1 relative">
             <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#8a80a0]">
                 <Icons.Globe />
@@ -150,18 +156,18 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
           </div>
           
           <button 
-            onClick={handleAddDomain}
+            type="submit"
             disabled={loading || !domainInput || isDomainLocked}
             className={`relative group overflow-hidden rounded-xl p-[1px] disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border ${isDomainLocked ? 'bg-white/5 border-transparent text-[#8a80a0]' : 'border-transparent'}`}
           >
             {!isDomainLocked && <span className="absolute inset-0 bg-gradient-to-r from-[#9b5de5] via-[#6c3b9c] to-[#9b5de5] opacity-80 group-hover:opacity-100 transition-opacity duration-300" />}
-            <div className={`relative flex items-center justify-center rounded-xl px-8 py-4 transition-all duration-300 h-full ${isDomainLocked ? 'bg-transparent' : 'bg-[#070512] group-hover:bg-transparent'}`}>
+            <div className={`relative flex items-center justify-center rounded-xl px-8 py-4 transition-all duration-300 h-full ${isDomainLocked ? 'bg-transparent text-[#8a80a0]' : 'bg-[#070512] group-hover:bg-transparent text-white'}`}>
               <span className={`font-['Syne',sans-serif] font-bold text-xs uppercase tracking-[0.15em] ${isDomainLocked ? 'text-[#8a80a0]' : 'text-white'}`}>
                 {loading ? 'Processing...' : isDomainLocked ? 'Registered' : 'Register Domain'}
               </span>
             </div>
           </button>
-        </div>
+        </form>
 
         {error && (
           <div className="p-4 mb-8 bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl flex items-center gap-3">
@@ -176,11 +182,12 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
             
             {domains.map((domain) => (
                 <div key={domain.id} className="border border-[#10b981]/30 rounded-2xl overflow-hidden bg-black/40 shadow-[0_0_30px_rgba(16,185,129,0.05)]">
-                <div className="bg-[#10b981]/10 p-6 border-b border-[#10b981]/20 flex justify-between items-center flex-wrap gap-4">
+                <div className="bg-[#10b981]/10 p-6 border-b border-[#10b981]/20 flex flex-wrap justify-between items-center gap-4">
                     <div>
                         <h3 className="font-['Syne',sans-serif] font-bold text-[#10b981] text-lg mb-1">{domain.domain_name} Generated</h3>
                         <p className="text-xs text-[#10b981]/70 tracking-wide">Copy and paste these exact records into your domain registrar to verify ownership.</p>
                     </div>
+                    
                     <div className="flex items-center gap-4">
                         <span className={`px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest border flex items-center gap-2 ${
                             domain.status === 'active' || domain.status === 'verified' ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30' : 
@@ -194,10 +201,10 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                         {domain.status !== 'active' && domain.status !== 'verified' && (
                             <button 
                             onClick={() => handleVerify(domain.id)}
-                            disabled={verifyingId === domain.id || domain.status === 'pending_verification'}
+                            disabled={verifyingId === domain.id} // <-- UNLOCKED BUTTON
                             className="flex items-center gap-2 px-4 py-2 bg-[#9b5de5] text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-[#8040cd] transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(155,93,229,0.3)]"
                             >
-                            {verifyingId === domain.id ? <><Icons.Refresh /> Pinging...</> : (domain.status === 'pending_verification' || domain.status === 'pending') ? 'Verify Records' : 'Verify Records'}
+                            {verifyingId === domain.id ? <><Icons.Refresh /> Pinging...</> : (domain.status === 'pending_verification' || domain.status === 'pending') ? 'Check Status' : 'Verify Records'}
                             </button>
                         )}
                     </div>

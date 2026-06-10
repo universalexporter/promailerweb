@@ -31,10 +31,37 @@ export async function POST(req: Request) {
 
     const domainName = domainData.domain_name
 
-    // --- ADDED: SILENTLY TRIGGER RESEND'S API ---
-    // This tells Resend to start checking on their end without breaking your custom local checks.
+    // --- NEW SMART SYNC: Check Resend's Live Status First ---
     if (domainData.resend_domain_id) {
       try {
+        // 1a. Ask Resend what the real-time status is right now
+        const statusCheck = await fetch(`https://api.resend.com/domains/${domainData.resend_domain_id}`, {
+          method: 'GET',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        })
+
+        if (statusCheck.ok) {
+          const resendStatusData = await statusCheck.json()
+          
+          // If Resend confirms it's verified, sync to Supabase immediately and finish!
+          if (resendStatusData.status === 'verified') {
+            await supabaseAdmin
+              .from('client_domains')
+              .update({ status: 'active' })
+              .eq('id', domainId)
+              
+            return NextResponse.json({ 
+              success: true, 
+              status: 'active', 
+              message: 'Network Linked! Resend has fully verified your domain.' 
+            })
+          }
+        }
+
+        // 1b. If not verified yet, trigger Resend's verification crawler engine to look again
         await fetch(`https://api.resend.com/domains/${domainData.resend_domain_id}/verify`, {
           method: 'POST',
           headers: {
@@ -42,12 +69,13 @@ export async function POST(req: Request) {
             'Content-Type': 'application/json'
           }
         })
+
       } catch (e) {
-        console.log(`Silent Resend trigger failed for ${domainName}`, e)
+        console.log(`Resend verification engine sync fallback for ${domainName}`, e)
       }
     }
-    // --------------------------------------------
-    
+    // --------------------------------------------------------
+
     // We search the generated records array for the required types
     const expectedDkim = domainData.dns_records.find((r: any) => r.type === 'TXT' && r.name.includes('dkim'))?.value
     const expectedSpf = domainData.dns_records.find((r: any) => r.type === 'TXT' && r.name === '@')?.value
@@ -80,7 +108,7 @@ export async function POST(req: Request) {
       console.log(`SPF lookup propagation pending for ${domainName}`)
     }
 
-    // 4. Update Database State based on verified checkpoints
+    // 4. Update Database State based on local verified checkpoints fallback
     if (dkimVerified && spfVerified) {
       await supabaseAdmin
         .from('client_domains')
@@ -94,9 +122,15 @@ export async function POST(req: Request) {
       })
     }
 
+    // If still propagating, set status to pending_verification so the UI shows it's working
+    await supabaseAdmin
+      .from('client_domains')
+      .update({ status: 'pending_verification' })
+      .eq('id', domainId)
+
     return NextResponse.json({ 
       success: false, 
-      status: 'pending', 
+      status: 'pending_verification', 
       message: 'Propagation ongoing. Ensure TXT records are accurately added to your registrar.' 
     })
 
