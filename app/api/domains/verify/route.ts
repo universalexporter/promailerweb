@@ -30,6 +30,23 @@ export async function POST(req: Request) {
     }
 
     const domainName = domainData.domain_name
+
+    // --- ADDED: SILENTLY TRIGGER RESEND'S API ---
+    // This tells Resend to start checking on their end without breaking your custom local checks.
+    if (domainData.resend_domain_id) {
+      try {
+        await fetch(`https://api.resend.com/domains/${domainData.resend_domain_id}/verify`, {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          }
+        })
+      } catch (e) {
+        console.log(`Silent Resend trigger failed for ${domainName}`, e)
+      }
+    }
+    // --------------------------------------------
     
     // We search the generated records array for the required types
     const expectedDkim = domainData.dns_records.find((r: any) => r.type === 'TXT' && r.name.includes('dkim'))?.value
