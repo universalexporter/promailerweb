@@ -291,12 +291,15 @@ export default function DashboardPage() {
 
   // Fallback to empty safe objects if dynamicTiers hasn't loaded yet to prevent crashing
   const safeTiers = dynamicTiers.length > 0 ? dynamicTiers : []
-  // FIXED: Explicitly defined email_limit in the fallback object to satisfy TypeScript
   const currentPlanObj = safeTiers.find(t => t.id === activePlanId) || safeTiers[0] || { id: 'none', name: 'Loading', price: 0, email_limit: 0, overage_cost: 0.0035, features: [] }
   
   const activeOverageCost = currentPlanObj.overage_cost || 0.0035
   const availableOverageEmails = Math.floor(walletBalance / activeOverageCost)
-  const isOutOfFunds = isAccountActive && walletBalance <= 0
+  
+  // 🚀 FIXED: Intelligent logic to check if they have emails left before warning them!
+  const hasPlanEmailsLeft = currentPlanObj.email_limit > 0 && emailsSent < currentPlanObj.email_limit
+  const isOutOfFunds = isAccountActive && walletBalance <= 0 && !hasPlanEmailsLeft
+  
   const isPlanExpired = preciseCountdown === 'EXPIRED'
   
   // FIXED: Referenced email_limit instead of limit for the progress bar calculations

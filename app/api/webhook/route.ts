@@ -20,37 +20,37 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing security configuration' }, { status: 400 })
     }
 
-    // 1. Verify Signature
+    // 1. Verify Signature Authenticity
     const calculatedHmac = crypto.createHmac('sha512', ipnSecret).update(rawBody).digest('hex')
     if (calculatedHmac !== hmacHeader) {
       console.error('⚠️ IPN Signature mismatch. Possible spoofing attempt.')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
-    // 2. Parse URL-encoded data
+    // 2. Parse URL-encoded payment data incoming from CoinPayments
     const params = new URLSearchParams(rawBody)
     const status = Number(params.get('status'))
     const merchant = params.get('merchant')
     const customOrderId = params.get('custom')
-    const depositAmount = Number(params.get('amount1')) // Exact USDT amount received
+    const depositAmount = Number(params.get('amount1')) // Exact currency amount received (e.g. USDT)
 
     if (merchant !== merchantId) {
       return NextResponse.json({ error: 'Merchant ID mismatch' }, { status: 401 })
     }
 
-    // 3. Process Completed Payments
+    // 3. Process Successfully Completed Payments (Status 100+ or Status 2 means success)
     if (status >= 100 || status === 2) {
       console.log(`✅ CoinPayments confirmed deposit for Order ID: ${customOrderId}`)
 
       if (!customOrderId) {
-        return NextResponse.json({ error: 'Missing custom order ID' }, { status: 400 })
+        return NextResponse.json({ error: 'Missing custom order ID metadata' }, { status: 400 })
       }
 
       const parts = customOrderId.split('_')
-      const txType = parts[0]
-      const clientEmail = parts[1]
+      const txType = parts[0]      // e.g., 'activation', 'topup', 'upgrade'
+      const clientEmail = parts[1] // Extract client target email address securely
 
-      // Fetch User Profile
+      // Fetch User Profile by Unique Email
       const { data: profile, error: profileError } = await supabaseAdmin
         .from('profiles')
         .select('id')
@@ -62,7 +62,7 @@ export async function POST(req: Request) {
       }
       const userId = profile.id
 
-      // Fetch Wallet
+      // Fetch Existing User Wallet Ledger Balance
       const { data: wallet, error: walletError } = await supabaseAdmin
         .from('wallets')
         .select('balance')
@@ -76,7 +76,8 @@ export async function POST(req: Request) {
       const currentBalance = Number(wallet.balance)
       const newBalance = currentBalance + depositAmount
 
-      const dbOperations = [
+      // Build Transaction Queue
+      const dbOperations: any[] = [
         supabaseAdmin
           .from('wallets')
           .update({ balance: newBalance, updated_at: new Date().toISOString() })
@@ -87,36 +88,41 @@ export async function POST(req: Request) {
             user_id: userId,
             amount: depositAmount,
             transaction_type: 'deposit',
-            description: txType === 'activation' ? 'Initial Node Network Activation' : 'Prepaid Wallet Top-Up'
+            description: txType === 'activation' || txType === 'upgrade' 
+              ? 'Premium Node Network Plan Activation' 
+              : 'Prepaid Wallet Top-Up'
           })
       ]
 
-      // 🚀 FIXED: Fetch Live Pricing from Database to determine the plan
-      if (txType === 'activation') {
+      // ─── 4. PLAN PROVISIONING ENGINE (ACTIVATION & UPGRADES) ───
+      if (txType === 'activation' || txType === 'upgrade') {
+        
+        // Calculate exact expiration window: 30 days from the moment of confirmation
         const expirationDate = new Date()
         expirationDate.setDate(expirationDate.getDate() + 30)
 
-        // Pull live pricing tiers from your database and sort them from most expensive to cheapest
+        // Pull current admin config tiers dynamically from system configuration matrix
         const { data: pricingTiers, error: pricingError } = await supabaseAdmin
           .from('system_pricing')
           .select('id, price')
-          .order('price', { ascending: false })
+          .order('price', { ascending: false }) // Evaluate descending (highest match tier first)
 
         if (pricingError || !pricingTiers || pricingTiers.length === 0) {
-          console.error("Critical Error: system_pricing table is empty or unreadable.")
-          return NextResponse.json({ error: 'Pricing database unavailable' }, { status: 500 })
+          console.error("Critical System Warning: system_pricing registry configurations missing.")
+          return NextResponse.json({ error: 'Pricing schema database unavailable' }, { status: 500 })
         }
 
-        // Loop through the prices to see what the user can afford
-        let assignedPlan = 'starter' // Failsafe default
+        // Loop through pricing setups to match the deposit amount correctly
+        let assignedPlan = 'starter' // Failsafe fallback anchor point
         
         for (const tier of pricingTiers) {
           if (depositAmount >= tier.price) {
-            assignedPlan = tier.id // e.g., 'enterprise', 'pro', or 'starter'
-            break // Stop searching once we find the highest plan they can afford
+            assignedPlan = tier.id // Assign matched level tier key (e.g., 'pro', 'scale', 'starter')
+            break // Stop on highest verified financial tier bracket achieved
           }
         }
 
+        // Add user profile update action to atomic request pool
         dbOperations.push(
           supabaseAdmin
             .from('profiles')
@@ -128,22 +134,22 @@ export async function POST(req: Request) {
         )
       }
 
-      // Execute all updates
+      // Execute all operations asynchronously in parallel securely
       const results = await Promise.all(dbOperations)
       const hasError = results.some(res => res.error)
 
       if (hasError) {
-        console.error('Database adjustment failure inside IPN pipeline:', results.map(r => r.error))
-        return NextResponse.json({ error: 'Ledger update failed' }, { status: 500 })
+        console.error('Database adjustment failure inside IPN ledger queue:', results.map(r => r.error))
+        return NextResponse.json({ error: 'Database pipeline provisioning error' }, { status: 500 })
       }
 
-      console.log(`💰 Successfully credited ${depositAmount} USDT. Plan updated for ${clientEmail}`)
+      console.log(`💰 Ledger Credited: +${depositAmount} USDT. Tier state matched to [${txType}] for user ${clientEmail}`)
     }
 
     return new Response('OK', { status: 200 })
 
   } catch (error) {
-    console.error('CoinPayments Webhook Error:', error)
-    return NextResponse.json({ error: 'Internal pipeline error' }, { status: 500 })
+    console.error('CoinPayments Critical IPN Exception Handler:', error)
+    return NextResponse.json({ error: 'Internal system pipeline exception' }, { status: 500 })
   }
 }
