@@ -82,8 +82,8 @@ export async function POST(req: Request) {
       const currentBalance = Number(wallet.balance)
       const newBalance = currentBalance + depositAmount
 
-      // Atomically update the wallet and log the transaction
-      const [walletUpdate, txLog] = await Promise.all([
+      // Build the base database execution batch
+      const dbOperations = [
         supabaseAdmin
           .from('wallets')
           .update({ balance: newBalance, updated_at: new Date().toISOString() })
@@ -96,14 +96,34 @@ export async function POST(req: Request) {
             transaction_type: 'deposit',
             description: txType === 'activation' ? 'Initial Node Network Activation' : 'Prepaid Wallet Top-Up'
           })
-      ])
+      ]
 
-      if (walletUpdate.error || txLog.error) {
-        console.error('Database adjustment failure:', walletUpdate.error || txLog.error)
+      // 🚀 FIXED: Update matching your exact active_plan_id & plan_expires_at schema
+      if (txType === 'activation') {
+        const expirationDate = new Date()
+        expirationDate.setDate(expirationDate.getDate() + 30) // Add exactly 30 days of active service
+
+        dbOperations.push(
+          supabaseAdmin
+            .from('profiles')
+            .update({ 
+              active_plan_id: 'starter', 
+              plan_expires_at: expirationDate.toISOString() 
+            })
+            .eq('id', userId)
+        )
+      }
+
+      // Execute all database adjustments atomically
+      const results = await Promise.all(dbOperations)
+      const hasError = results.some(res => res.error)
+
+      if (hasError) {
+        console.error('Database adjustment failure inside IPN pipeline:', results.map(r => r.error))
         return NextResponse.json({ error: 'Ledger update failed' }, { status: 500 })
       }
 
-      console.log(`💰 Successfully credited ${depositAmount} USDT to ${clientEmail}`)
+      console.log(`💰 Successfully credited ${depositAmount} USDT and updated subscription plan for ${clientEmail}`)
     }
 
     // CoinPayments requires a simple HTTP 200 response to stop pinging
