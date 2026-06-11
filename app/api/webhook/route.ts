@@ -10,10 +10,8 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
-    // CoinPayments sends data as form-urlencoded text, not JSON
     const rawBody = await req.text()
     
-    // CoinPayments puts the signature in the 'hmac' header
     const hmacHeader = req.headers.get('hmac')
     const ipnSecret = process.env.COINPAYMENTS_IPN_SECRET
     const merchantId = process.env.COINPAYMENTS_MERCHANT_ID
@@ -22,27 +20,25 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Missing security configuration' }, { status: 400 })
     }
 
-    // 1. Verify the Cryptographic Signature
+    // 1. Verify Signature
     const calculatedHmac = crypto.createHmac('sha512', ipnSecret).update(rawBody).digest('hex')
-
     if (calculatedHmac !== hmacHeader) {
       console.error('⚠️ IPN Signature mismatch. Possible spoofing attempt.')
       return NextResponse.json({ error: 'Invalid signature' }, { status: 401 })
     }
 
-    // 2. Parse the URL-encoded data
+    // 2. Parse URL-encoded data
     const params = new URLSearchParams(rawBody)
     const status = Number(params.get('status'))
     const merchant = params.get('merchant')
-    const customOrderId = params.get('custom') // This holds our 'type_email_timestamp'
-    const depositAmount = Number(params.get('amount1')) // amount1 is the original fiat/USDT amount
+    const customOrderId = params.get('custom')
+    const depositAmount = Number(params.get('amount1')) // Exact USDT amount received
 
-    // Verify it was sent to your specific merchant ID
     if (merchant !== merchantId) {
       return NextResponse.json({ error: 'Merchant ID mismatch' }, { status: 401 })
     }
 
-    // 3. Process Only Completed Payments (CoinPayments status >= 100 means completed/confirmed)
+    // 3. Process Completed Payments
     if (status >= 100 || status === 2) {
       console.log(`✅ CoinPayments confirmed deposit for Order ID: ${customOrderId}`)
 
@@ -54,7 +50,7 @@ export async function POST(req: Request) {
       const txType = parts[0]
       const clientEmail = parts[1]
 
-      // Find the user's UUID
+      // Fetch User Profile
       const { data: profile, error: profileError } = await supabaseAdmin
         .from('profiles')
         .select('id')
@@ -62,13 +58,11 @@ export async function POST(req: Request) {
         .single()
 
       if (profileError || !profile) {
-        console.error(`User not found for email: ${clientEmail}`)
         return NextResponse.json({ error: 'User profile match failed' }, { status: 404 })
       }
-
       const userId = profile.id
 
-      // Fetch current wallet status
+      // Fetch Wallet
       const { data: wallet, error: walletError } = await supabaseAdmin
         .from('wallets')
         .select('balance')
@@ -82,7 +76,6 @@ export async function POST(req: Request) {
       const currentBalance = Number(wallet.balance)
       const newBalance = currentBalance + depositAmount
 
-      // Build the base database execution batch
       const dbOperations = [
         supabaseAdmin
           .from('wallets')
@@ -98,23 +91,44 @@ export async function POST(req: Request) {
           })
       ]
 
-      // 🚀 FIXED: Update matching your exact active_plan_id & plan_expires_at schema
+      // 🚀 FIXED: Fetch Live Pricing from Database to determine the plan
       if (txType === 'activation') {
         const expirationDate = new Date()
-        expirationDate.setDate(expirationDate.getDate() + 30) // Add exactly 30 days of active service
+        expirationDate.setDate(expirationDate.getDate() + 30)
+
+        // Pull live pricing tiers from your database and sort them from most expensive to cheapest
+        const { data: pricingTiers, error: pricingError } = await supabaseAdmin
+          .from('system_pricing')
+          .select('id, price')
+          .order('price', { ascending: false })
+
+        if (pricingError || !pricingTiers || pricingTiers.length === 0) {
+          console.error("Critical Error: system_pricing table is empty or unreadable.")
+          return NextResponse.json({ error: 'Pricing database unavailable' }, { status: 500 })
+        }
+
+        // Loop through the prices to see what the user can afford
+        let assignedPlan = 'starter' // Failsafe default
+        
+        for (const tier of pricingTiers) {
+          if (depositAmount >= tier.price) {
+            assignedPlan = tier.id // e.g., 'enterprise', 'pro', or 'starter'
+            break // Stop searching once we find the highest plan they can afford
+          }
+        }
 
         dbOperations.push(
           supabaseAdmin
             .from('profiles')
             .update({ 
-              active_plan_id: 'starter', 
+              active_plan_id: assignedPlan, 
               plan_expires_at: expirationDate.toISOString() 
             })
             .eq('id', userId)
         )
       }
 
-      // Execute all database adjustments atomically
+      // Execute all updates
       const results = await Promise.all(dbOperations)
       const hasError = results.some(res => res.error)
 
@@ -123,10 +137,9 @@ export async function POST(req: Request) {
         return NextResponse.json({ error: 'Ledger update failed' }, { status: 500 })
       }
 
-      console.log(`💰 Successfully credited ${depositAmount} USDT and updated subscription plan for ${clientEmail}`)
+      console.log(`💰 Successfully credited ${depositAmount} USDT. Plan updated for ${clientEmail}`)
     }
 
-    // CoinPayments requires a simple HTTP 200 response to stop pinging
     return new Response('OK', { status: 200 })
 
   } catch (error) {
