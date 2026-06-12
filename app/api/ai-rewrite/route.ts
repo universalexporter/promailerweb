@@ -8,10 +8,16 @@ const supabaseAdmin = createClient(
 
 // Maps the desktop app's preset goals to concrete instructions for the model.
 const GOAL_PROMPTS: Record<string, string> = {
-  warmer: 'Rewrite to sound warmer, friendlier and more human, while keeping the same meaning.',
-  shorter: 'Rewrite to be shorter and more concise. Cut filler, keep the core message and any call to action.',
-  less_spammy: 'Rewrite to avoid spam-trigger words, ALL-CAPS, excessive punctuation and hypey claims, so it is more likely to land in the inbox. Keep it honest and professional.',
-  fix_grammar: 'Fix grammar, spelling and punctuation, and lightly polish phrasing. Do not change the meaning or tone.',
+  warmer: 'Make it warmer, friendlier and more human — write like one thoughtful person to another.',
+  persuasive: 'Make it more persuasive: lead with a clear benefit, add gentle social proof or specificity, and build a logical reason to act.',
+  shorter: 'Make it shorter and punchier. Cut filler and redundancy; keep the core message and the call to action.',
+  expand: 'Add useful depth and detail where it strengthens the message, without padding or fluff.',
+  less_spammy: 'Remove spam-trigger words, ALL-CAPS, excessive punctuation and hypey claims so it lands in the inbox. Keep it honest.',
+  formal: 'Make it more formal, refined and polished — appropriate for executives and premium brands.',
+  storytelling: 'Open with a short, relatable hook or mini-story (1–2 sentences) that draws the reader in, then transition naturally to the message.',
+  strong_cta: 'Sharpen the call to action: make it single, specific, benefit-led and easy to act on.',
+  fix_grammar: 'Fix grammar, spelling and punctuation and lightly polish phrasing without changing meaning.',
+  personalize: 'Weave in the {{first_name}} merge tag naturally near the opening so it reads personal, not templated.',
 }
 
 export async function POST(req: Request) {
@@ -25,7 +31,14 @@ export async function POST(req: Request) {
 
     // 2. Parse payload from the desktop editor
     const body = await req.json()
-    const { subject, html_body, goal } = body
+    const { subject, html_body } = body
+    // Accept the new multi-goal payload, falling back to the legacy single `goal`.
+    const goals: string[] = Array.isArray(body.goals) && body.goals.length
+      ? body.goals
+      : [body.goal || 'warmer']
+    const tone: string = (body.tone || 'professional').toString()
+    const length: string = (body.length || 'keep').toString()
+    const audience: string = (body.audience || '').toString().slice(0, 400)
     if (!html_body || typeof html_body !== 'string') {
       return NextResponse.json({ error: 'Missing email body to rewrite.' }, { status: 400 })
     }
@@ -42,18 +55,37 @@ export async function POST(req: Request) {
     }
 
     // 4. Build the instruction (AI rewrites are free — no billing/limits here)
-    const instruction = GOAL_PROMPTS[goal] || GOAL_PROMPTS.warmer
+    const goalLines = goals
+      .map((g) => GOAL_PROMPTS[g])
+      .filter(Boolean)
+      .map((line, i) => `${i + 1}. ${line}`)
+      .join('\n')
+
+    const lengthMap: Record<string, string> = {
+      keep: 'Keep roughly the same length as the original.',
+      short: 'Aim for a concise email of about 60–110 words.',
+      medium: 'Aim for a medium email of about 120–200 words.',
+      long: 'Aim for a richer email of about 220–320 words, but never padded.',
+    }
 
     const systemPrompt =
-      'You are an expert email-marketing copy editor. You will receive an email subject and an HTML body. ' +
-      'Rewrite them according to the instruction. Preserve any merge tags exactly as written, including {{first_name}}, ' +
-      '{{last_name}} and {{email}}. Keep the HTML structure valid and simple (keep tags like <p>, <a>, <b>, <ul>, <li>, <img>). ' +
-      'Do not invent links or facts. Respond with STRICT JSON only, no markdown, in the form: ' +
+      'You are a world-class email copywriter and editor for premium brands. You craft elegant, ' +
+      'high-converting marketing emails that feel personal, credible and effortless to read — never cheap, ' +
+      'never gimmicky, never spammy. You write with rhythm and restraint: strong specific subject lines, ' +
+      'a compelling first line, clear structure, and one clean call to action. ' +
+      'You will receive an email subject and HTML body and must rewrite BOTH. ' +
+      'Rules: preserve every merge tag exactly ({{first_name}}, {{last_name}}, {{email}}, {{unsubscribe_url}}); ' +
+      'never remove an existing unsubscribe link; keep HTML valid and simple (<p>, <a>, <b>, <strong>, <em>, <ul>, <li>, <img>, <br>); ' +
+      'do not invent links, prices, or facts that were not present; avoid ALL-CAPS, "!!!", and spam-trigger hype. ' +
+      'Write a subject line under ~55 characters. Respond with STRICT JSON only, no markdown: ' +
       '{"subject": "...", "html_body": "..."}.'
 
     const userPrompt =
-      `INSTRUCTION: ${instruction}\n\n` +
-      `CURRENT SUBJECT: ${subject || '(none)'}\n\n` +
+      `APPLY THESE GOALS TOGETHER:\n${goalLines || '1. Improve overall quality.'}\n\n` +
+      `TONE: ${tone}.\n` +
+      `LENGTH: ${lengthMap[length] || lengthMap.keep}\n` +
+      (audience ? `AUDIENCE / CONTEXT: ${audience}\n` : '') +
+      `\nCURRENT SUBJECT: ${subject || '(none)'}\n\n` +
       `CURRENT HTML BODY:\n${html_body}`
 
     // 5. Call OpenAI (key stays on the server; never in the desktop app)
@@ -64,8 +96,8 @@ export async function POST(req: Request) {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
-        model: 'gpt-4o-mini',
-        temperature: 0.7,
+        model: 'gpt-4o',
+        temperature: 0.75,
         response_format: { type: 'json_object' },
         messages: [
           { role: 'system', content: systemPrompt },

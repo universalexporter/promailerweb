@@ -1,10 +1,23 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import crypto from 'crypto'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
+
+const APP_URL = 'https://promailerweb.vercel.app'
+
+// Builds the signed, per-recipient unsubscribe link that /api/unsubscribe verifies.
+function buildUnsubUrl(email: string): string {
+  const secret = process.env.UNSUB_SECRET || ''
+  const sig = crypto.createHmac('sha256', secret).update(email).digest('hex').slice(0, 32)
+  const enc = Buffer.from(email, 'utf8')
+    .toString('base64')
+    .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
+  return `${APP_URL}/api/unsubscribe?u=${enc}.${sig}`
+}
 
 export async function POST(req: Request) {
   try {
@@ -35,6 +48,18 @@ export async function POST(req: Request) {
     }
 
     const userId = profile.id
+
+    // 3b. Respect unsubscribes server-side: never send to someone who opted out,
+    //     even if the desktop list hasn't synced yet. (Safe, read-only check.)
+    const { data: contactRow } = await supabaseAdmin
+      .from('contacts')
+      .select('status')
+      .eq('email', to)
+      .maybeSingle()
+
+    if (contactRow && contactRow.status === 'unsubscribed') {
+      return NextResponse.json({ skipped: true, reason: 'unsubscribed' }, { status: 200 })
+    }
 
     // 4. Verify Domain Ownership (Layer 2 Security Check)
     const domainPart = from_email.split('@')[1]
@@ -93,6 +118,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'Insufficient Balance or Plan Limits Exhausted.' }, { status: 402 })
     }
 
+    // 6b. Unsubscribe link: build this recipient's signed URL, fill the
+    //     {{unsubscribe_url}} placeholder the desktop editor inserts, and make sure
+    //     every email has a visible unsubscribe (Gmail/Yahoo require it for bulk).
+    const unsubUrl = buildUnsubUrl(to)
+    let finalHtml = (html_body || '').split('{{unsubscribe_url}}').join(unsubUrl)
+    if (!/unsubscribe/i.test(finalHtml)) {
+      finalHtml +=
+        `<p style="font-size:12px;color:#888888;margin-top:24px;">` +
+        `If you no longer wish to receive these emails, you can ` +
+        `<a href="${unsubUrl}" style="color:#888888;">unsubscribe here</a>.</p>`
+    }
+
     // 7. FIRE THE EMAIL VIA RESEND (Using native fetch so no extra installs needed)
     const resendResponse = await fetch('https://api.resend.com/emails', {
       method: 'POST',
@@ -104,7 +141,12 @@ export async function POST(req: Request) {
         from: `${from_name} <${from_email}>`,
         to: [to],
         subject: subject,
-        html: html_body
+        html: finalHtml,
+        // RFC 8058 one-click unsubscribe — the modern deliverability requirement.
+        headers: {
+          'List-Unsubscribe': `<${unsubUrl}>`,
+          'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click'
+        }
       })
     })
 
