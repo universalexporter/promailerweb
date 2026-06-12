@@ -263,14 +263,15 @@ export default function DashboardPage() {
     setTimeout(() => setCopiedKey(false), 2000)
   }
 
-  const handleCheckout = async (amount: number, description: string, type: 'activation' | 'topup' | 'upgrade') => {
+  // CHANGED: now accepts planId and embeds it in order_id -> {type}_{planId}_{email}_{timestamp}
+  const handleCheckout = async (amount: number, description: string, type: 'activation' | 'topup' | 'upgrade', planId: string = 'wallet') => {
     const paymentWindow = window.open('', '_blank')
     setIsProcessingCheckout(true)
     try {
       const response = await fetch('/api/checkout', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ amount, description, order_id: `${type}_${userEmail}_${Date.now()}` })
+        body: JSON.stringify({ amount, description, order_id: `${type}_${planId}_${userEmail}_${Date.now()}` })
       })
       const data = await response.json()
       if (data.checkout_url && paymentWindow) paymentWindow.location.href = data.checkout_url
@@ -410,7 +411,7 @@ export default function DashboardPage() {
                   <p className="text-[10px] text-[#6a6080] max-w-[280px] leading-relaxed uppercase tracking-[0.15em] font-bold">
                     {!isAccountActive ? "Choose a primary plan before adding funds." : "Funds instantly credited to sending engine."}
                   </p>
-                  <button onClick={() => handleCheckout(depositAmount, 'Overage Balance Top-Up', 'topup')} disabled={!isAccountActive || isProcessingCheckout} className="w-full sm:w-auto relative group overflow-hidden rounded-xl p-[1px] disabled:opacity-50">
+                  <button onClick={() => handleCheckout(depositAmount, 'Overage Balance Top-Up', 'topup', 'wallet')} disabled={!isAccountActive || isProcessingCheckout} className="w-full sm:w-auto relative group overflow-hidden rounded-xl p-[1px] disabled:opacity-50">
                     <span className="absolute inset-0 bg-gradient-to-r from-[#9b5de5] via-[#6c3b9c] to-[#9b5de5] opacity-80 group-hover:opacity-100 transition-opacity duration-300" />
                     <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-12 py-4 transition-all duration-300 group-hover:bg-transparent">
                       <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">
@@ -564,7 +565,7 @@ export default function DashboardPage() {
                     onClick={() => {
                       const selectedPlanObj = dynamicTiers.find(t => t.id === selectedTier) || dynamicTiers[0];
                       let checkoutPrice = isUpgrading ? Math.max(0, selectedPlanObj.price - currentPlanObj.price) : selectedPlanObj.price;
-                      handleCheckout(checkoutPrice, `${selectedPlanObj.name} ${isUpgrading ? 'Upgrade' : 'Subscription'}`, 'activation');
+                      handleCheckout(checkoutPrice, `${selectedPlanObj.name} ${isUpgrading ? 'Upgrade' : 'Subscription'}`, isUpgrading ? 'upgrade' : 'activation', selectedPlanObj.id);
                     }}
                     disabled={dynamicTiers.length === 0 || isProcessingCheckout || (isUpgrading && selectedTier === currentPlanObj.id)}
                     className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] disabled:opacity-50 mt-auto shrink-0 shadow-[0_10px_40px_rgba(155,93,229,0.2)]"
