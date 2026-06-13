@@ -103,6 +103,14 @@ export async function POST(req: Request) {
       days.push({ day: key, sent: rec.sent, failed: rec.failed })
     }
 
+    // Recent processed rows for the live telemetry table (most recent first).
+    const recent = (rows || []).slice(0, 50).map(r => ({
+      email: r.email,
+      status: r.status,
+      error_log: r.error_log,
+      processed_at: r.processed_at,
+    }))
+
     const toSorted = (m: Record<string, number>) =>
       Object.entries(m).map(([label, value]) => ({ label, value })).sort((a, b) => b.value - a.value)
 
@@ -112,6 +120,7 @@ export async function POST(req: Request) {
       providers: toSorted(providerMap),
       failures: toSorted(failureMap),
       hours,
+      recent,
     }, { status: 200 })
 
   } catch (error: any) {
