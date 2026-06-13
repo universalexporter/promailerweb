@@ -7,7 +7,7 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
-const APP_URL = 'https://pro-mail.club'
+const APP_URL = 'https://www.pro-mail.club'
 
 // ---- smart pacing: how many to send per 1-minute cron tick, by job size ----
 function batchSizeFor(total: number): number {
@@ -30,9 +30,13 @@ function buildUnsubUrl(email: string): string {
 }
 
 function fillMerge(text: string, r: any): string {
+  // Graceful fallbacks: a missing first name becomes "there" so the email reads
+  // "Hi there," instead of "Hi ,". Last name falls back to empty.
+  const first = (r.first_name && String(r.first_name).trim()) ? String(r.first_name).trim() : 'there'
+  const last = (r.last_name && String(r.last_name).trim()) ? String(r.last_name).trim() : ''
   return (text || '')
-    .split('{{first_name}}').join(r.first_name || '')
-    .split('{{last_name}}').join(r.last_name || '')
+    .split('{{first_name}}').join(first)
+    .split('{{last_name}}').join(last)
     .split('{{email}}').join(r.email || '')
 }
 
