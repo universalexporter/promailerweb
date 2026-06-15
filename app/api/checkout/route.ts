@@ -2,28 +2,22 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// Service-role client to write the pending transaction (bypasses RLS).
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
 
-// ── ORDER ID FORMAT (must match dashboard + webhook) ────────────────────────
+// ── ORDER ID FORMAT (matches dashboard + webhook) ───────────────────────────
 //   type|planId|userId|timestamp
-// We use "|" as the separator because it never appears in emails, plan ids or
-// uuids, so the parts can always be split back out reliably.
-// type   = activation | upgrade | topup
-// planId = starter | pro | enterprise   (or 'wallet' for a top-up)
-// userId = the REAL auth user id (uuid)
-// ────────────────────────────────────────────────────────────────────────────
+// We parse it to store the right data, but we do NOT do any database work
+// BEFORE calling CoinPayments — that keeps the payment path identical to the
+// original working version, so the gateway never fails on our account.
 function parseOrderId(orderId: string) {
   const parts = (orderId || '').split('|');
   if (parts.length >= 4) {
     return { type: parts[0], planId: parts[1], userId: parts[2], ts: parts[3] };
   }
-  // Backward-compat: tolerate the OLD underscore format so in-flight orders
-  // don't crash. (type_plan_email_ts) — we can't recover userId from it, so
-  // we leave userId empty and let manual approval handle those.
+  // tolerate the old underscore format just in case
   const legacy = (orderId || '').split('_');
   return { type: legacy[0] || 'activation', planId: legacy[1] || 'wallet', userId: '', ts: legacy[3] || '' };
 }
@@ -42,24 +36,12 @@ export async function POST(req: Request) {
 
     const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.pro-mail.club';
 
-    // Correctly pull the real userId + planId + type out of the order_id.
+    // Parse the parts we need to STORE later (no DB calls here).
     const { type, planId, userId } = parseOrderId(order_id);
 
-    // Look up the buyer's email for the CoinPayments receipt (best-effort).
-    // This must NEVER break the payment — wrap it so any failure just falls
-    // back to a default email and the transaction still goes through.
-    let clientEmail = 'client@pro-mail.club';
-    try {
-      if (userId) {
-        const { data: prof } = await supabaseAdmin
-          .from('profiles').select('email').eq('id', userId).single();
-        if (prof?.email) clientEmail = prof.email;
-      }
-    } catch {
-      /* ignore — keep the default email */
-    }
-    // Guarantee a syntactically valid email for CoinPayments.
-    if (!clientEmail || !clientEmail.includes('@')) clientEmail = 'client@pro-mail.club';
+    // Buyer email for the receipt — kept simple like the original working code.
+    // (No pre-call database lookup; a generic email is fine for CoinPayments.)
+    const clientEmail = 'client@pro-mail.club';
 
     const payloadParams = new URLSearchParams({
       version: '1',
@@ -71,7 +53,7 @@ export async function POST(req: Request) {
       currency2: 'USDT.TRC20',
       buyer_email: clientEmail,
       item_name: description,
-      custom: order_id,                       // CoinPayments echoes this back in the IPN
+      custom: order_id,
       success_url: `${baseUrl}/dashboard?payment=success`,
       cancel_url: `${baseUrl}/dashboard?payment=cancelled`
     });
@@ -91,9 +73,8 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (data.error === 'ok' && data.result) {
-      // Save the pending transaction WITH the real user_id, plan_id and type,
-      // so the webhook (or a manual approve) can activate the right plan later.
-      // Wrapped so a DB hiccup never blocks the user's payment redirect.
+      // Only AFTER a successful gateway response do we touch the database.
+      // Wrapped so a DB issue can never block the user's payment redirect.
       try {
         await supabaseAdmin.from('transactions').insert({
           txn_id: data.result.txn_id,
@@ -112,7 +93,7 @@ export async function POST(req: Request) {
 
       return NextResponse.json({ checkout_url: data.result.checkout_url }, { status: 200 });
     } else {
-      // Surface the real CoinPayments error so it's diagnosable.
+      // Surface the real CoinPayments reason so any issue is diagnosable.
       return NextResponse.json({ error: data.error || 'CoinPayments rejected the request' }, { status: 500 });
     }
 

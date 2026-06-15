@@ -82,6 +82,7 @@ export default function SupportDesk() {
   const [txnLoading, setTxnLoading] = useState(false)
   const [txnFilter, setTxnFilter] = useState<'all' | 'pending' | 'completed'>('all')
   const [approvingId, setApprovingId] = useState<string | null>(null)
+  const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [txnSearch, setTxnSearch] = useState('')
 
   const [modal, setModal] = useState<ModalState>({
@@ -183,6 +184,12 @@ export default function SupportDesk() {
     } finally {
       setApprovingId(null)
     }
+  }
+
+  const handleLogout = async () => {
+    setIsLoggingOut(true)
+    try { await supabase.auth.signOut() } catch { /* ignore */ }
+    router.replace('/login')
   }
 
   const handleSavePricing = async () => {
@@ -369,7 +376,7 @@ export default function SupportDesk() {
   }
 
   return (
-    <main className="fixed inset-0 bg-[#020106] text-white font-['DM_Sans',sans-serif] flex flex-col md:flex-row overflow-hidden selection:bg-[#9b5de5]/30">
+    <main className="min-h-screen md:h-screen bg-[#020106] text-white font-['DM_Sans',sans-serif] flex flex-col md:flex-row md:overflow-hidden selection:bg-[#9b5de5]/30">
 
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -407,9 +414,14 @@ export default function SupportDesk() {
       )}
 
       {/* ── SIDEBAR (network list) ── */}
-      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col h-auto md:h-full min-h-0 max-h-[40vh] md:max-h-full z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
+      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col h-auto md:h-screen min-h-0 z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
         <div className="p-5 sm:p-8 border-b border-white/[0.08] bg-black/40 shrink-0">
-          <h1 className="font-['Syne',sans-serif] text-xl sm:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">SUPPORT HQ</h1>
+          <div className="flex justify-between items-start gap-3">
+            <h1 className="font-['Syne',sans-serif] text-xl sm:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">SUPPORT HQ</h1>
+            <button onClick={handleLogout} disabled={isLoggingOut} className="shrink-0 text-[9px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all border border-white/[0.1] px-3 py-2 rounded-lg bg-white/[0.03] hover:bg-red-500/10 hover:border-red-500/30 hover:text-red-400">
+              {isLoggingOut ? '...' : 'Log Out'}
+            </button>
+          </div>
           <p className="text-[#8a80a0] text-[10px] font-bold uppercase tracking-[0.2em] mt-2 mb-5">Active Network: <span className="text-white">{clients.length} Nodes</span></p>
 
           <button onClick={() => { setActiveTab('global'); setSelectedClient(null); }} className={`w-full py-3 rounded-xl border font-bold text-xs uppercase tracking-widest transition-all ${activeTab === 'global' ? 'bg-[#9b5de5]/20 border-[#9b5de5]/50 text-[#9b5de5]' : 'bg-white/5 border-white/10 text-[#8a80a0] hover:text-white'}`}>
@@ -441,7 +453,7 @@ export default function SupportDesk() {
       </div>
 
       {/* ── MAIN PANEL ── */}
-      <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
+      <div className="flex-1 flex flex-col md:h-screen min-h-0 md:overflow-hidden bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
 
         {activeTab === 'global' ? (
           <div className="flex-1 overflow-y-auto p-5 sm:p-10 custom-scrollbar">
