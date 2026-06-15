@@ -6,6 +6,7 @@ import dynamic from 'next/dynamic'
 import { createClient } from '@supabase/supabase-js'
 import GuideModal from '@/components/GuideModal'
 import DomainManager from '@/components/DomainManager'
+import DownloadButton from '@/components/DownloadButton'
 
 // ─── 1. CORE SYSTEM INITIALIZATION ──────────────────────────────────────────
 // Module-level singleton: created exactly once, which prevents the
@@ -605,17 +606,13 @@ export default function DashboardPage() {
           </div>
 
           <div className="relative z-10 flex flex-col sm:flex-row gap-4 items-center justify-start md:justify-end">
-            {/* Real download link to the Windows installer hosted on Supabase Storage */}
-            <a
-              href={WINDOWS_INSTALLER_URL}
-              download
+            {/* Single button → dropdown to choose Windows or Mac */}
+            <DownloadButton
+              align="right"
               className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-white/[0.03] hover:bg-[#3b82f6]/10 text-white rounded-xl border border-white/[0.08] hover:border-[#3b82f6]/50 transition-all font-bold text-[11px] uppercase tracking-widest shadow-sm"
             >
-              <Icons.Windows /> Download for Windows
-            </a>
-            <button disabled className="w-full sm:w-auto flex items-center justify-center gap-3 px-8 py-4 bg-black/40 text-[#8a80a0] rounded-xl border border-white/[0.04] cursor-not-allowed opacity-50 font-bold text-[11px] uppercase tracking-widest">
-              <Icons.Apple /> Mac OS (Coming Soon)
-            </button>
+              <Icons.Download /> Download Desktop App
+            </DownloadButton>
           </div>
         </div>
 

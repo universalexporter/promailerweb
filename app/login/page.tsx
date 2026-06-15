@@ -1,38 +1,67 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
 import { useRouter } from 'next/navigation'
 import { createClient } from '@supabase/supabase-js'
 
-// Initialize Supabase
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
 )
 
-// 3D Neural Brain Engine (Stays in the background)
 const NeuralBrainScene = dynamic(() => import('@/components/3d/NeuralBrainScene'), { ssr: false })
 
 export default function LoginPage() {
   const router = useRouter()
-  
-  // State Management
+
   const [isLogin, setIsLogin] = useState(true)
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
-  
-  // Enterprise Fields (Signup Only)
+
   const [fullName, setFullName] = useState('')
   const [companyName, setCompanyName] = useState('')
   const [mobilePhone, setMobilePhone] = useState('')
-  
-  // Feedback States
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
+  const [checking, setChecking] = useState(true)
 
-  // ── THE AUTHENTICATION ENGINE ──
+  // ── Route a signed-in user to the correct panel by role. ──
+  const routeByRole = async (userId: string) => {
+    const { data: profile } = await supabase
+      .from('profiles').select('role').eq('id', userId).single()
+    if (profile?.role === 'admin' || profile?.role === 'support') {
+      router.replace('/support-desk')
+    } else {
+      router.replace('/dashboard')
+    }
+    router.refresh()
+  }
+
+  // ── On load: if there's a REAL session, leave login. If the stored session
+  //    is stale/invalid (the cause of the redirect loop), clear it so the
+  //    login page can load cleanly instead of bouncing. ──
+  useEffect(() => {
+    let active = true
+    const check = async () => {
+      const { data: { user }, error } = await supabase.auth.getUser()
+      if (!active) return
+      if (error || !user) {
+        // Stale or no session → wipe any leftover cookie and show the form.
+        await supabase.auth.signOut().catch(() => {})
+        setChecking(false)
+        return
+      }
+      // Genuinely logged in → go to the right panel.
+      routeByRole(user.id)
+    }
+    check()
+    return () => { active = false }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
@@ -40,33 +69,16 @@ export default function LoginPage() {
     setMessage(null)
 
     if (isLogin) {
-      // LOG IN
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({
-        email,
-        password,
-      })
-
+      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
       if (authError) {
         setError(authError.message)
       } else if (authData.user) {
-        // The Traffic Director: Check role before routing
-        const { data: profile } = await supabase
-          .from('profiles')
-          .select('role')
-          .eq('id', authData.user.id)
-          .single()
-
-        // Route based on clearance level
-        if (profile?.role === 'admin' || profile?.role === 'support') {
-          router.push('/support-desk')
-        } else {
-          router.push('/dashboard')
-        }
-        router.refresh()
+        await routeByRole(authData.user.id)
       }
     } else {
-      // SIGN UP
-      const { error } = await supabase.auth.signUp({
+      // SIGN UP — no email verification. Requires "Confirm email" to be OFF in
+      // Supabase Auth settings so a session is returned immediately.
+      const { data: signData, error: signError } = await supabase.auth.signUp({
         email,
         password,
         options: {
@@ -78,19 +90,25 @@ export default function LoginPage() {
         }
       })
 
-      if (error) setError(error.message)
-      else {
-        setMessage('Account created. Please check your email to verify your address.')
-        setIsLogin(true)
-        setFullName('')
-        setCompanyName('')
-        setMobilePhone('')
+      if (signError) {
+        setError(signError.message)
+      } else if (signData.session && signData.user) {
+        // Confirm-email is OFF → we got a session → go straight in.
+        await routeByRole(signData.user.id)
+      } else if (signData.user) {
+        // Fallback: if a session wasn't returned, try an immediate sign-in.
+        const { data: loginData, error: loginErr } = await supabase.auth.signInWithPassword({ email, password })
+        if (loginErr) {
+          setError('Account created. Please sign in.')
+          setIsLogin(true)
+        } else if (loginData.user) {
+          await routeByRole(loginData.user.id)
+        }
       }
     }
     setLoading(false)
   }
 
-  // ── PASSWORD RECOVERY ──
   const handleRecover = async () => {
     if (!email) {
       setError('Please enter your Email Address first.')
@@ -98,37 +116,41 @@ export default function LoginPage() {
     }
     setLoading(true)
     setError(null)
-    
     const { error } = await supabase.auth.resetPasswordForEmail(email)
-    
     if (error) setError(error.message)
     else setMessage('Password reset instructions sent to your email.')
-    
     setLoading(false)
+  }
+
+  // While verifying an existing session, show a tiny loader (prevents the
+  // form from flashing for already-logged-in users).
+  if (checking) {
+    return (
+      <main className="relative min-h-screen flex items-center justify-center bg-[#030208]">
+        <div className="w-10 h-10 border-4 border-[#9b5de5]/20 border-t-[#9b5de5] rounded-full animate-spin" />
+      </main>
+    )
   }
 
   return (
     <main className="relative min-h-screen flex items-center justify-center bg-[#030208] p-4 sm:p-8 overflow-hidden font-['DM_Sans',sans-serif]">
-      
-      {/* Background Engine */}
+
       <div className="absolute inset-0 z-0 w-full h-full opacity-80 mix-blend-screen pointer-events-none">
          <NeuralBrainScene />
       </div>
       <div className="absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_center,transparent_0%,#030208_100%)] pointer-events-none" />
 
-      {/* ── STATIC STACKED GLASS CARD ── */}
       <div className="relative z-20 w-full max-w-[480px]">
-        
-        <div className="relative rounded-[2rem] bg-[#070512]/60 backdrop-blur-[40px] border border-white/[0.06] p-8 sm:p-12 shadow-[0_20px_80px_-20px_rgba(108,59,156,0.5),inset_0_0_0_1px_rgba(255,255,255,0.05)] overflow-hidden transition-all duration-500">
-          
+
+        <div className="relative rounded-3xl sm:rounded-[2rem] bg-[#070512]/60 backdrop-blur-[40px] border border-white/[0.06] p-6 sm:p-12 shadow-[0_20px_80px_-20px_rgba(108,59,156,0.5),inset_0_0_0_1px_rgba(255,255,255,0.05)] overflow-hidden transition-all duration-500">
+
           <div className="absolute top-0 left-1/4 w-1/2 h-[1px] bg-gradient-to-r from-transparent via-[#9b5de5] to-transparent opacity-60" />
-          
-          {/* Header */}
-          <div className="text-center mb-10 relative z-10">
-            <h1 className="font-['Syne',sans-serif] text-3xl sm:text-4xl font-extrabold tracking-tight mb-3 text-white">
+
+          <div className="text-center mb-8 sm:mb-10 relative z-10">
+            <h1 className="font-['Syne',sans-serif] text-2xl sm:text-4xl font-extrabold tracking-tight mb-3 text-white">
               {isLogin ? 'Welcome Back.' : 'Create Account.'}
             </h1>
-            
+
             {error && (
               <div className="mt-4 px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-xs tracking-wide">
                 {error}
@@ -147,8 +169,7 @@ export default function LoginPage() {
           </div>
 
           <form onSubmit={handleSubmit} className="space-y-5 relative z-10">
-            
-            {/* ── OPTIONAL FIELDS (Signup Only) ── */}
+
             {!isLogin && (
               <>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
@@ -197,7 +218,6 @@ export default function LoginPage() {
               </>
             )}
 
-            {/* ── CORE FIELDS (Always Visible) ── */}
             <div>
               <label className="block text-[11px] font-bold text-[#8a80a0] uppercase tracking-wider mb-2 ml-1">
                 Email Address
@@ -218,8 +238,8 @@ export default function LoginPage() {
                   Password
                 </label>
                 {isLogin && (
-                  <button 
-                    type="button" 
+                  <button
+                    type="button"
                     onClick={handleRecover}
                     className="text-[11px] font-bold text-[#9b5de5] hover:text-white transition-colors"
                   >
@@ -259,7 +279,7 @@ export default function LoginPage() {
               {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
             </button>
           </div>
-          
+
         </div>
       </div>
 

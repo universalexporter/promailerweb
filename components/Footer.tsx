@@ -1,7 +1,7 @@
 'use client'
 
 import Link from 'next/link'
-import { handleDownloadApp } from '@/lib/download'
+import DownloadButton from '@/components/DownloadButton'
 
 const COLS = [
   {
@@ -78,15 +78,11 @@ export default function Footer() {
               {col.links.map((lnk) => (
                 <li key={lnk.label}>
                   {('download' in lnk && lnk.download) ? (
-                    // Desktop App → triggers the smart OS-aware download
-                    <a
-                      href="#"
-                      className="ft-col-a"
-                      style={{ textDecoration:'none', cursor:'pointer' }}
-                      onClick={(e) => { e.preventDefault(); handleDownloadApp() }}
-                    >
+                    // Desktop App → opens the Windows/Mac chooser dropdown
+                    <DownloadButton className="ft-col-a" align="left"
+                      style={{ background:'transparent', border:'none', padding:0, cursor:'pointer' }}>
                       {lnk.label}
-                    </a>
+                    </DownloadButton>
                   ) : (
                     <Link href={lnk.href} className="ft-col-a" style={{ textDecoration:'none' }}>{lnk.label}</Link>
                   )}

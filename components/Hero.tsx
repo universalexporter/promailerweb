@@ -3,7 +3,8 @@
 import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
-import { handleDownloadApp } from '@/lib/download'
+import Link from 'next/link'
+import DownloadButton from '@/components/DownloadButton'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -72,20 +73,19 @@ export default function Hero() {
         </p>
 
         <div data-hero className="hc-btns">
-          <button className="hc-btn-p"
-            onClick={handleDownloadApp}
+          <DownloadButton className="hc-btn-p" align="left"
             onMouseEnter={e=>{const el=e.currentTarget as HTMLElement;el.style.transform='translateY(-2px)';el.style.boxShadow='0 0 48px rgba(108,59,156,0.68),0 6px 22px rgba(0,0,0,0.5)'}}
             onMouseLeave={e=>{const el=e.currentTarget as HTMLElement;el.style.transform='translateY(0)';el.style.boxShadow='0 0 22px rgba(108,59,156,0.5),0 4px 18px rgba(0,0,0,0.4)'}}
           >
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download the App
-          </button>
-          <button className="hc-btn-s"
+          </DownloadButton>
+          <Link href="/dashboard" className="hc-btn-s" style={{ textDecoration: 'none' }}
             onMouseEnter={e=>{const el=e.currentTarget as HTMLElement;el.style.background='rgba(255,255,255,0.1)';el.style.borderColor='rgba(255,255,255,0.2)';el.style.color='#fff'}}
             onMouseLeave={e=>{const el=e.currentTarget as HTMLElement;el.style.background='rgba(255,255,255,0.05)';el.style.borderColor='rgba(255,255,255,0.1)';el.style.color='#d4cfe8'}}
           >
             Fund Your Account
-          </button>
+          </Link>
         </div>
 
         <div data-hero className="hc-stats">
