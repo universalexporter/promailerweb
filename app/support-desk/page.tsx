@@ -407,7 +407,7 @@ export default function SupportDesk() {
       )}
 
       {/* ── SIDEBAR (network list) ── */}
-      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col h-auto md:h-full max-h-[40vh] md:max-h-full z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
+      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col h-auto md:h-full min-h-0 max-h-[40vh] md:max-h-full z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
         <div className="p-5 sm:p-8 border-b border-white/[0.08] bg-black/40 shrink-0">
           <h1 className="font-['Syne',sans-serif] text-xl sm:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">SUPPORT HQ</h1>
           <p className="text-[#8a80a0] text-[10px] font-bold uppercase tracking-[0.2em] mt-2 mb-5">Active Network: <span className="text-white">{clients.length} Nodes</span></p>
@@ -441,7 +441,7 @@ export default function SupportDesk() {
       </div>
 
       {/* ── MAIN PANEL ── */}
-      <div className="flex-1 flex flex-col h-full bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
+      <div className="flex-1 flex flex-col h-full min-h-0 overflow-hidden bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
 
         {activeTab === 'global' ? (
           <div className="flex-1 overflow-y-auto p-5 sm:p-10 custom-scrollbar">

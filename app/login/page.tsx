@@ -76,45 +76,53 @@ export default function LoginPage() {
     setError(null)
     setMessage(null)
 
-    if (isLogin) {
-      const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
-      if (authError) {
-        setError(authError.message)
-      } else if (authData.user) {
-        await routeByRole(authData.user.id)
-      }
-    } else {
-      // SIGN UP — no email verification. Requires "Confirm email" to be OFF in
-      // Supabase Auth settings so a session is returned immediately.
-      const { data: signData, error: signError } = await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: fullName || null,
-            company_name: companyName || null,
-            mobile_phone: mobilePhone || null,
+    try {
+      if (isLogin) {
+        const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
+        if (authError) {
+          setError(authError.message || 'Invalid email or password.')
+        } else if (authData.user) {
+          await routeByRole(authData.user.id)
+        } else {
+          setError('Invalid email or password.')
+        }
+      } else {
+        // SIGN UP — no email verification. Requires "Confirm email" to be OFF in
+        // Supabase Auth settings so a session is returned immediately.
+        const { data: signData, error: signError } = await supabase.auth.signUp({
+          email,
+          password,
+          options: {
+            data: {
+              full_name: fullName || null,
+              company_name: companyName || null,
+              mobile_phone: mobilePhone || null,
+            }
+          }
+        })
+
+        if (signError) {
+          setError(signError.message)
+        } else if (signData.session && signData.user) {
+          // Confirm-email is OFF → we got a session → go straight in.
+          await routeByRole(signData.user.id)
+        } else if (signData.user) {
+          // Fallback: if a session wasn't returned, try an immediate sign-in.
+          const { data: loginData, error: loginErr } = await supabase.auth.signInWithPassword({ email, password })
+          if (loginErr) {
+            setError('Account created. Please sign in.')
+            setIsLogin(true)
+          } else if (loginData.user) {
+            await routeByRole(loginData.user.id)
           }
         }
-      })
-
-      if (signError) {
-        setError(signError.message)
-      } else if (signData.session && signData.user) {
-        // Confirm-email is OFF → we got a session → go straight in.
-        await routeByRole(signData.user.id)
-      } else if (signData.user) {
-        // Fallback: if a session wasn't returned, try an immediate sign-in.
-        const { data: loginData, error: loginErr } = await supabase.auth.signInWithPassword({ email, password })
-        if (loginErr) {
-          setError('Account created. Please sign in.')
-          setIsLogin(true)
-        } else if (loginData.user) {
-          await routeByRole(loginData.user.id)
-        }
       }
+    } catch (err: any) {
+      // Any unexpected throw still surfaces a message instead of silently doing nothing.
+      setError(err?.message || 'Something went wrong. Please try again.')
+    } finally {
+      setLoading(false)
     }
-    setLoading(false)
   }
 
   const handleRecover = async () => {

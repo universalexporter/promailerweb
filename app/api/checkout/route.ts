@@ -46,12 +46,20 @@ export async function POST(req: Request) {
     const { type, planId, userId } = parseOrderId(order_id);
 
     // Look up the buyer's email for the CoinPayments receipt (best-effort).
+    // This must NEVER break the payment — wrap it so any failure just falls
+    // back to a default email and the transaction still goes through.
     let clientEmail = 'client@pro-mail.club';
-    if (userId) {
-      const { data: prof } = await supabaseAdmin
-        .from('profiles').select('email').eq('id', userId).single();
-      if (prof?.email) clientEmail = prof.email;
+    try {
+      if (userId) {
+        const { data: prof } = await supabaseAdmin
+          .from('profiles').select('email').eq('id', userId).single();
+        if (prof?.email) clientEmail = prof.email;
+      }
+    } catch {
+      /* ignore — keep the default email */
     }
+    // Guarantee a syntactically valid email for CoinPayments.
+    if (!clientEmail || !clientEmail.includes('@')) clientEmail = 'client@pro-mail.club';
 
     const payloadParams = new URLSearchParams({
       version: '1',
@@ -85,21 +93,27 @@ export async function POST(req: Request) {
     if (data.error === 'ok' && data.result) {
       // Save the pending transaction WITH the real user_id, plan_id and type,
       // so the webhook (or a manual approve) can activate the right plan later.
-      await supabaseAdmin.from('transactions').insert({
-        txn_id: data.result.txn_id,
-        user_id: userId || null,
-        plan_id: planId,
-        type: type,
-        amount: amount,
-        currency: 'USDT.TRC20',
-        status: 'pending',
-        description: description,
-        order_id: order_id
-      });
+      // Wrapped so a DB hiccup never blocks the user's payment redirect.
+      try {
+        await supabaseAdmin.from('transactions').insert({
+          txn_id: data.result.txn_id,
+          user_id: userId || null,
+          plan_id: planId,
+          type: type,
+          amount: amount,
+          currency: 'USDT.TRC20',
+          status: 'pending',
+          description: description,
+          order_id: order_id
+        });
+      } catch (e) {
+        console.error('Transaction insert failed (payment still proceeding):', e);
+      }
 
       return NextResponse.json({ checkout_url: data.result.checkout_url }, { status: 200 });
     } else {
-      return NextResponse.json({ error: data.error }, { status: 500 });
+      // Surface the real CoinPayments error so it's diagnosable.
+      return NextResponse.json({ error: data.error || 'CoinPayments rejected the request' }, { status: 500 });
     }
 
   } catch (error: any) {
