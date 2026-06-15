@@ -3,18 +3,14 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import dynamic from 'next/dynamic'
-import { createClient } from '@supabase/supabase-js'
+import { supabase } from '@/lib/supabaseClient'
 import GuideModal from '@/components/GuideModal'
 import DomainManager from '@/components/DomainManager'
 import DownloadButton from '@/components/DownloadButton'
 
 // ─── 1. CORE SYSTEM INITIALIZATION ──────────────────────────────────────────
-// Module-level singleton: created exactly once, which prevents the
-// "Multiple GoTrueClient instances detected" console warning.
-const supabase = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!
-)
+// The shared cookie-based client is imported from '@/lib/supabaseClient' so the
+// browser and the server middleware read the same session (prevents login loops).
 
 // Public download link for the Windows desktop installer (hosted on Supabase Storage).
 const WINDOWS_INSTALLER_URL =

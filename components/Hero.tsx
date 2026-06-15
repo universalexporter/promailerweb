@@ -71,19 +71,6 @@ export default function Hero() {
           Private by design · AI rewrite · 3-layer spam filter · Full contact control · No monthly lock-in.
         </p>
 
-        <div data-hero className="hc-stats">
-          {[
-            { val:'100%', label:'Data Stays On Your Device', color:'#10b981', glow:'0 0 18px rgba(16,185,129,0.55)' },
-            { val:'AI',   label:'Rewrites & Spam-Checks',    color:'#9b5de5', glow:'0 0 18px rgba(155,93,229,0.55)' },
-            { val:'Full', label:'Control Of Your Contacts',  color:'#ffffff', glow:'none'                            },
-          ].map(({ val, label, color, glow }) => (
-            <div key={label}>
-              <div className="hc-stat-val" style={{ color, textShadow:glow }}>{val}</div>
-              <div className="hc-stat-lbl">{label}</div>
-            </div>
-          ))}
-        </div>
-
         <div data-hero className="hc-btns">
           <DownloadButton className="hc-btn-p" align="left"
             onMouseEnter={e=>{const el=e.currentTarget as HTMLElement;el.style.transform='translateY(-2px)';el.style.boxShadow='0 0 48px rgba(108,59,156,0.68),0 6px 22px rgba(0,0,0,0.5)'}}
@@ -98,6 +85,19 @@ export default function Hero() {
           >
             Fund Your Account
           </Link>
+        </div>
+
+        <div data-hero className="hc-stats">
+          {[
+            { val:'100%', label:'Data Stays On Your Device', color:'#10b981', glow:'0 0 18px rgba(16,185,129,0.55)' },
+            { val:'AI',   label:'Rewrites & Spam-Checks',    color:'#9b5de5', glow:'0 0 18px rgba(155,93,229,0.55)' },
+            { val:'Full', label:'Control Of Your Contacts',  color:'#ffffff', glow:'none'                            },
+          ].map(({ val, label, color, glow }) => (
+            <div key={label}>
+              <div className="hc-stat-val" style={{ color, textShadow:glow }}>{val}</div>
+              <div className="hc-stat-lbl">{label}</div>
+            </div>
+          ))}
         </div>
       </div>
 
