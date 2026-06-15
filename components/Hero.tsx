@@ -68,9 +68,7 @@ export default function Hero() {
         </h1>
 
         <p data-hero className="hc-sub">
-          Your contacts never leave your computer—we only route the send. AI rewrites
-          your copy, a 3-layer spam filter protects your inbox placement, and you keep
-          full control. World-class delivery at among the lowest prices, with no monthly lock-in.
+          Private by design · AI rewrite · 3-layer spam filter · Full contact control · No monthly lock-in.
         </p>
 
         <div data-hero className="hc-stats">
@@ -126,8 +124,8 @@ export default function Hero() {
         /* ══════ CONTENT COLUMN ══════ */
         .hc {
           /* 46% max on desktop so 3D fills the right side */
-          width: 46%;
-          max-width: 560px;
+          width: 52%;
+          max-width: 640px;
           position: relative;
           z-index: 2;
           padding: 100px 0 80px 48px;
@@ -162,7 +160,7 @@ export default function Hero() {
         .hc-sub {
           font-size: clamp(12.5px, 1.1vw, 15px);
           font-family: 'DM Sans',sans-serif; font-weight:300;
-          line-height:1.8; color:#9080a8; margin-bottom:28px; max-width:400px;
+          line-height:1.7; color:#9080a8; margin-bottom:28px; max-width:560px;
         }
 
         /* ══════ BUTTONS ══════ */
@@ -277,7 +275,7 @@ export default function Hero() {
         @media (max-width: 900px) {
           .hc { width:55%; padding:88px 0 70px 28px; }
           .hc-h1  { font-size: 26px !important; }
-          .hc-sub { font-size: 13px !important; max-width: 320px; }
+          .hc-sub { font-size: 13px !important; max-width: 460px; }
           .hc-stat-val { font-size: 19px !important; }
         }
 
@@ -286,12 +284,12 @@ export default function Hero() {
            so 3D is visible on the right 32%     */
         @media (max-width: 680px) {
           .hc {
-            width: 68%;
+            width: 74%;
             max-width: none;
             padding: 80px 0 56px 18px;
           }
           .hc-h1   { font-size: 20px !important; line-height:1.12!important; letter-spacing:-0.025em!important; }
-          .hc-sub  { font-size: 11.5px !important; max-width: 260px; margin-bottom: 20px; }
+          .hc-sub  { font-size: 11.5px !important; max-width: 340px; margin-bottom: 20px; }
           .hc-badge { font-size: 8px !important; padding: 4px 9px !important; margin-bottom:12px; letter-spacing:.08em!important; }
           .hc-btns  { gap: 7px; }
           .hc-btn-p, .hc-btn-s { font-size: 10.5px !important; padding: 7px 13px !important; gap:5px; }
@@ -305,9 +303,9 @@ export default function Hero() {
 
         /* ══════ SMALL MOBILE ≤420px ══════ */
         @media (max-width: 420px) {
-          .hc { width:70%; padding:76px 0 50px 14px; }
+          .hc { width:78%; padding:76px 0 50px 14px; }
           .hc-h1  { font-size: 18px !important; }
-          .hc-sub { font-size: 11px !important; max-width: 220px; }
+          .hc-sub { font-size: 11px !important; max-width: 300px; }
           .hc-btn-p, .hc-btn-s { font-size: 10px !important; padding: 7px 11px !important; }
           .hc-stat-val { font-size: 15px !important; }
         }
