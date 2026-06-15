@@ -41,24 +41,37 @@ export default function LoginPage() {
   }
 
   // ── On load: if there's a REAL session, leave login. If the stored session
-  //    is stale/invalid (the cause of the redirect loop), clear it so the
-  //    login page can load cleanly instead of bouncing. ──
+  //    is stale/invalid, just show the form (don't hang on the spinner). ──
   useEffect(() => {
     let active = true
+
+    // Safety net: no matter what happens with the auth check (network hang,
+    // SDK stall, etc.), never leave the user stuck on the spinner. After 2.5s
+    // we show the login form regardless.
+    const safety = setTimeout(() => { if (active) setChecking(false) }, 2500)
+
     const check = async () => {
-      const { data: { user }, error } = await supabase.auth.getUser()
-      if (!active) return
-      if (error || !user) {
-        // Stale or no session → wipe any leftover cookie and show the form.
-        await supabase.auth.signOut().catch(() => {})
-        setChecking(false)
-        return
+      try {
+        const { data: { session } } = await supabase.auth.getSession()
+        if (!active) return
+
+        if (session?.user) {
+          // Genuinely logged in → route to the right panel.
+          // (Spinner stays until the route change happens — that's fine.)
+          routeByRole(session.user.id)
+        } else {
+          // Not logged in → show the login form.
+          setChecking(false)
+        }
+      } catch {
+        if (active) setChecking(false)
+      } finally {
+        clearTimeout(safety)
       }
-      // Genuinely logged in → go to the right panel.
-      routeByRole(user.id)
     }
+
     check()
-    return () => { active = false }
+    return () => { active = false; clearTimeout(safety) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 

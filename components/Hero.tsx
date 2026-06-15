@@ -62,15 +62,29 @@ export default function Hero() {
         </div>
 
         <h1 data-hero className="hc-h1">
-          The Ultimate<br />
+          World-Class<br />
           Desktop-to-Cloud<br />
           <span className="hc-green">Sending Engine.</span>
         </h1>
 
         <p data-hero className="hc-sub">
-          Prepare offline. Dispatch in the cloud. Total privacy meets enterprise
-          delivery—engineered for operators who cannot afford a single point of failure.
+          Your contacts never leave your computer—we only route the send. AI rewrites
+          your copy, a 3-layer spam filter protects your inbox placement, and you keep
+          full control. World-class delivery at among the lowest prices, with no monthly lock-in.
         </p>
+
+        <div data-hero className="hc-stats">
+          {[
+            { val:'100%', label:'Data Stays On Your Device', color:'#10b981', glow:'0 0 18px rgba(16,185,129,0.55)' },
+            { val:'AI',   label:'Rewrites & Spam-Checks',    color:'#9b5de5', glow:'0 0 18px rgba(155,93,229,0.55)' },
+            { val:'Full', label:'Control Of Your Contacts',  color:'#ffffff', glow:'none'                            },
+          ].map(({ val, label, color, glow }) => (
+            <div key={label}>
+              <div className="hc-stat-val" style={{ color, textShadow:glow }}>{val}</div>
+              <div className="hc-stat-lbl">{label}</div>
+            </div>
+          ))}
+        </div>
 
         <div data-hero className="hc-btns">
           <DownloadButton className="hc-btn-p" align="left"
@@ -86,19 +100,6 @@ export default function Hero() {
           >
             Fund Your Account
           </Link>
-        </div>
-
-        <div data-hero className="hc-stats">
-          {[
-            { val:'100%', label:'Data Stays Local',      color:'#10b981', glow:'0 0 18px rgba(16,185,129,0.55)'  },
-            { val:'∞',    label:'Isolated Sub-Accounts', color:'#9b5de5', glow:'0 0 18px rgba(155,93,229,0.55)'  },
-            { val:'$0',   label:'Monthly Subscription',  color:'#ffffff', glow:'none'                             },
-          ].map(({ val, label, color, glow }) => (
-            <div key={label}>
-              <div className="hc-stat-val" style={{ color, textShadow:glow }}>{val}</div>
-              <div className="hc-stat-lbl">{label}</div>
-            </div>
-          ))}
         </div>
       </div>
 
@@ -165,7 +166,7 @@ export default function Hero() {
         }
 
         /* ══════ BUTTONS ══════ */
-        .hc-btns { display:flex; gap:10px; flex-wrap:wrap; }
+        .hc-btns { display:flex; gap:10px; flex-wrap:wrap; margin-top:32px; }
         .hc-btn-p, .hc-btn-s {
           display:flex; align-items:center; gap:7px; border-radius:9px;
           font-family:'Syne',sans-serif; font-weight:700; cursor:pointer; white-space:nowrap;

@@ -75,7 +75,7 @@ export default function DownloadButton({
     align === 'left' ? 'left-0' : align === 'right' ? 'right-0' : 'left-1/2 -translate-x-1/2'
 
   return (
-    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block' }}>
+    <div ref={wrapRef} style={{ position: 'relative', display: 'inline-block', zIndex: open ? 9999 : 'auto' }}>
       <button
         type="button"
         className={className}
@@ -91,15 +91,15 @@ export default function DownloadButton({
         <div
           className={`pm-dl-menu ${alignClass}`}
           style={{
-            position: 'absolute', top: 'calc(100% + 10px)', zIndex: 200,
+            position: 'absolute', top: 'calc(100% + 10px)', zIndex: 99999,
             minWidth: '230px',
-            background: 'rgba(10,7,20,0.96)',
+            background: 'rgba(10,7,20,0.98)',
             backdropFilter: 'blur(20px)',
             WebkitBackdropFilter: 'blur(20px)',
             border: '1px solid rgba(155,93,229,0.25)',
             borderRadius: '16px',
             padding: '8px',
-            boxShadow: '0 20px 60px rgba(0,0,0,0.7), 0 0 30px rgba(155,93,229,0.15)',
+            boxShadow: '0 20px 60px rgba(0,0,0,0.8), 0 0 30px rgba(155,93,229,0.18)',
           }}
         >
           {/* Windows */}
