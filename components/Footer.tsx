@@ -1,13 +1,14 @@
 'use client'
 
 import Link from 'next/link'
+import { handleDownloadApp } from '@/lib/download'
 
 const COLS = [
   {
     title: 'Product',
     links: [
-      { label: 'Desktop App',    href: '#' },
-      { label: 'Client Portal',  href: '#' },
+      { label: 'Desktop App',    href: '#', download: true },
+      { label: 'Client Portal',  href: '/login' },
       { label: 'Virtual Ledger', href: '#' },
       { label: 'API Reference',  href: '#' },
       { label: 'Changelog',      href: '#' },
@@ -74,9 +75,21 @@ export default function Footer() {
           <div key={col.title} className="ft-col">
             <h4 className="ft-col-h">{col.title}</h4>
             <ul className="ft-col-ul">
-              {col.links.map(({ label, href }) => (
-                <li key={label}>
-                  <Link href={href} className="ft-col-a" style={{ textDecoration:'none' }}>{label}</Link>
+              {col.links.map((lnk) => (
+                <li key={lnk.label}>
+                  {('download' in lnk && lnk.download) ? (
+                    // Desktop App → triggers the smart OS-aware download
+                    <a
+                      href="#"
+                      className="ft-col-a"
+                      style={{ textDecoration:'none', cursor:'pointer' }}
+                      onClick={(e) => { e.preventDefault(); handleDownloadApp() }}
+                    >
+                      {lnk.label}
+                    </a>
+                  ) : (
+                    <Link href={lnk.href} className="ft-col-a" style={{ textDecoration:'none' }}>{lnk.label}</Link>
+                  )}
                 </li>
               ))}
             </ul>

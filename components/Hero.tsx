@@ -3,6 +3,7 @@
 import { useEffect, useRef } from 'react'
 import gsap from 'gsap'
 import { ScrollTrigger } from 'gsap/ScrollTrigger'
+import { handleDownloadApp } from '@/lib/download'
 
 gsap.registerPlugin(ScrollTrigger)
 
@@ -72,6 +73,7 @@ export default function Hero() {
 
         <div data-hero className="hc-btns">
           <button className="hc-btn-p"
+            onClick={handleDownloadApp}
             onMouseEnter={e=>{const el=e.currentTarget as HTMLElement;el.style.transform='translateY(-2px)';el.style.boxShadow='0 0 48px rgba(108,59,156,0.68),0 6px 22px rgba(0,0,0,0.5)'}}
             onMouseLeave={e=>{const el=e.currentTarget as HTMLElement;el.style.transform='translateY(0)';el.style.boxShadow='0 0 22px rgba(108,59,156,0.5),0 4px 18px rgba(0,0,0,0.4)'}}
           >

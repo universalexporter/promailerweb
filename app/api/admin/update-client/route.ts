@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { requireAdmin } from '@/lib/requireAdmin'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -8,6 +9,15 @@ const supabaseAdmin = createClient(
 
 export async function POST(req: Request) {
   try {
+    // ── SECURITY GATE ──────────────────────────────────────────────
+    // Verify the caller is a logged-in admin/support user BEFORE doing
+    // anything. Without this, anyone could POST here and change balances,
+    // plans, emails or passwords. requireAdmin checks the role server-side.
+    const gate = await requireAdmin()
+    if (gate instanceof Response) return gate   // 401 / 403 — blocked
+    // (gate.user is the authenticated admin if you ever want to log who acted)
+    // ───────────────────────────────────────────────────────────────
+
     const { userId, action, value } = await req.json()
 
     if (!userId || !action) {
@@ -30,14 +40,14 @@ export async function POST(req: Request) {
     // 2. SUBSCRIPTION ROUTING (Update Plan & Start 30-Day Timer)
     if (action === 'plan') {
       const isRevoking = value === 'none'
-      
+
       // Calculate exactly 30 days from this exact second
       const expiresAt = new Date()
       expiresAt.setDate(expiresAt.getDate() + 30)
 
       const { error } = await supabaseAdmin
         .from('profiles')
-        .update({ 
+        .update({
           active_plan_id: isRevoking ? null : value,
           plan_expires_at: isRevoking ? null : expiresAt.toISOString()
         })

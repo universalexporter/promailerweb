@@ -1,24 +1,21 @@
 import { NextResponse } from 'next/server';
 import crypto from 'crypto';
-import { createClient } from '@supabase/supabase-js';
+import { activateTransaction } from '@/lib/activatePlan';
 
-const supabaseAdmin = createClient(
-  process.env.NEXT_PUBLIC_SUPABASE_URL!,
-  process.env.SUPABASE_SERVICE_ROLE_KEY!
-);
-
+// CoinPayments IPN (Instant Payment Notification).
+// When a payment confirms, CoinPayments POSTs here. We verify the HMAC
+// signature (so it can't be faked), then activate the correct plan via the
+// shared activateTransaction() helper.
 export async function POST(req: Request) {
   try {
-    // 1. CoinPayments sends IPN data as urlencoded text
+    // 1. CoinPayments sends IPN data as urlencoded text.
     const textBody = await req.text();
     const params = new URLSearchParams(textBody);
-    
-    // Extract incoming variables sent by CoinPayments
+
     const txn_id = params.get('txn_id');
     const status = parseInt(params.get('status') || '0', 10);
-    const custom_order_id = params.get('custom'); // This holds our order_id containing the user_id
 
-    // 2. Security Check: Verify that this request actually came from CoinPayments
+    // 2. SECURITY: verify the request really came from CoinPayments.
     const ipnHeaderSignature = req.headers.get('HMAC');
     const IPN_SECRET = process.env.COINPAYMENTS_IPN_SECRET;
 
@@ -31,42 +28,32 @@ export async function POST(req: Request) {
       .update(textBody)
       .digest('hex');
 
-    if (calculatedHmac !== ipnHeaderSignature) {
-      console.error("⚠️ IPN SECURITY WARNING: Mathematical signature mismatch.");
+    // Constant-time compare to avoid timing attacks.
+    const a = Buffer.from(calculatedHmac);
+    const b = Buffer.from(ipnHeaderSignature);
+    if (a.length !== b.length || !crypto.timingSafeEqual(a, b)) {
+      console.error("⚠️ IPN SECURITY WARNING: signature mismatch.");
       return NextResponse.json({ error: "Invalid signature" }, { status: 401 });
     }
 
-    // 3. Status Control: Status 100 or 2 means the transaction is complete and confirmed
+    // 3. Status 100 (or 2) = complete & confirmed. Anything lower is still
+    //    pending/processing, so we acknowledge but don't activate yet.
     if (status >= 100 || status === 2) {
-      // Fetch transaction to make sure it's not already processed
-      const { data: currentTxn } = await supabaseAdmin
-        .from('transactions')
-        .select('*')
-        .eq('txn_id', txn_id)
-        .single();
-
-      if (currentTxn && currentTxn.status !== 'completed') {
-        // A. Mark the transaction as completed automatically
-        await supabaseAdmin
-          .from('transactions')
-          .update({ status: 'completed' })
-          .eq('txn_id', txn_id);
-
-        // B. Activate the client's premium features instantly
-        await supabaseAdmin
-          .from('users')
-          .update({ 
-            plan: 'pro', 
-            subscription_status: 'active',
-            updated_at: new Date().toISOString()
-          })
-          .eq('id', currentTxn.user_id);
-
-        console.log(`✅ Transaction ${txn_id} automatically processed and user upgraded via Webhook.`);
+      if (!txn_id) {
+        return new Response('IPN OK (no txn_id)', { status: 200 });
+      }
+      // Activate the RIGHT plan for the RIGHT user, automatically.
+      const result = await activateTransaction(txn_id);
+      if (!result.ok) {
+        console.error(`IPN activation problem for ${txn_id}:`, result.error);
+        // Still return 200 so CoinPayments stops retrying; the admin can
+        // approve manually from the support desk if needed.
+      } else {
+        console.log(`✅ IPN processed ${txn_id}: ${result.detail}`);
       }
     }
 
-    // CoinPayments expects a simple 'IPN OK' response to stop retrying
+    // CoinPayments expects a simple 200 to stop retrying.
     return new Response('IPN OK', { status: 200 });
 
   } catch (error: any) {

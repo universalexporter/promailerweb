@@ -2,11 +2,31 @@ import { NextResponse } from 'next/server';
 import crypto from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 
-// Initialize admin Supabase client using service role key to bypass RLS for server actions
+// Service-role client to write the pending transaction (bypasses RLS).
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 );
+
+// ── ORDER ID FORMAT (must match dashboard + webhook) ────────────────────────
+//   type|planId|userId|timestamp
+// We use "|" as the separator because it never appears in emails, plan ids or
+// uuids, so the parts can always be split back out reliably.
+// type   = activation | upgrade | topup
+// planId = starter | pro | enterprise   (or 'wallet' for a top-up)
+// userId = the REAL auth user id (uuid)
+// ────────────────────────────────────────────────────────────────────────────
+function parseOrderId(orderId: string) {
+  const parts = (orderId || '').split('|');
+  if (parts.length >= 4) {
+    return { type: parts[0], planId: parts[1], userId: parts[2], ts: parts[3] };
+  }
+  // Backward-compat: tolerate the OLD underscore format so in-flight orders
+  // don't crash. (type_plan_email_ts) — we can't recover userId from it, so
+  // we leave userId empty and let manual approval handle those.
+  const legacy = (orderId || '').split('_');
+  return { type: legacy[0] || 'activation', planId: legacy[1] || 'wallet', userId: '', ts: legacy[3] || '' };
+}
 
 export async function POST(req: Request) {
   try {
@@ -20,11 +40,18 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing Keys" }, { status: 500 });
     }
 
-    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'http://localhost:3000';
-    
-    // Extract user ID from your order_id schema (assuming order_id format is "userId_timestamp")
-    const userId = order_id.split('_')[0];
-    const clientEmail = order_id.split('_')[1] || 'client@promail.club';
+    const baseUrl = process.env.NEXT_PUBLIC_SITE_URL || 'https://www.pro-mail.club';
+
+    // Correctly pull the real userId + planId + type out of the order_id.
+    const { type, planId, userId } = parseOrderId(order_id);
+
+    // Look up the buyer's email for the CoinPayments receipt (best-effort).
+    let clientEmail = 'client@pro-mail.club';
+    if (userId) {
+      const { data: prof } = await supabaseAdmin
+        .from('profiles').select('email').eq('id', userId).single();
+      if (prof?.email) clientEmail = prof.email;
+    }
 
     const payloadParams = new URLSearchParams({
       version: '1',
@@ -34,9 +61,9 @@ export async function POST(req: Request) {
       amount: amount.toString(),
       currency1: 'USDT',
       currency2: 'USDT.TRC20',
-      buyer_email: clientEmail, 
+      buyer_email: clientEmail,
       item_name: description,
-      custom: order_id,
+      custom: order_id,                       // CoinPayments echoes this back in the IPN
       success_url: `${baseUrl}/dashboard?payment=success`,
       cancel_url: `${baseUrl}/dashboard?payment=cancelled`
     });
@@ -56,10 +83,13 @@ export async function POST(req: Request) {
     const data = await response.json();
 
     if (data.error === 'ok' && data.result) {
-      // 💾 SAVE PENDING TRANSACTION TO SUPABASE BEFORE REDIRECTING
+      // Save the pending transaction WITH the real user_id, plan_id and type,
+      // so the webhook (or a manual approve) can activate the right plan later.
       await supabaseAdmin.from('transactions').insert({
-        txn_id: data.result.txn_id, // CoinPayments tracking ID
-        user_id: userId,
+        txn_id: data.result.txn_id,
+        user_id: userId || null,
+        plan_id: planId,
+        type: type,
         amount: amount,
         currency: 'USDT.TRC20',
         status: 'pending',
