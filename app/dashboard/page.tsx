@@ -128,7 +128,7 @@ export default function DashboardPage() {
         const [profileRes, walletRes, pricingRes] = await Promise.all([
           supabase.from('profiles').select('*').eq('id', session.user.id).single(),
           supabase.from('wallets').select('balance').eq('user_id', session.user.id).single(),
-          fetch('/api/admin/system-pricing').then(res => res.ok ? res.json() : { pricing: [] })
+          fetch('/api/admin/system-pricing', { cache: 'no-store' }).then(res => res.ok ? res.json() : { pricing: [] })
         ])
 
         if (pricingRes.pricing && pricingRes.pricing.length > 0) {
@@ -143,11 +143,17 @@ export default function DashboardPage() {
           setApiKey(profileRes.data.api_key)
           const dbPlan = profileRes.data.active_plan_id
           const dbExpires = profileRes.data.plan_expires_at
-          if (dbPlan || Number(walletRes.data?.balance) > 0) {
+          const bal = Number(walletRes.data?.balance) || 0
+          // Always reflect the profile's plan + usage, regardless of wallet state.
+          setEmailsSent(profileRes.data.emails_sent || 0)
+          if (dbPlan) {
+            setActivePlanId(dbPlan)
             setIsAccountActive(true)
-            setActivePlanId(dbPlan || 'starter')
             if (dbExpires) setExpiresAtDate(new Date(dbExpires))
-            setEmailsSent(profileRes.data.emails_sent || 0)
+          } else if (bal > 0) {
+            // No subscription but has wallet funds → still an active (pay-as-you-go) account.
+            setActivePlanId('starter')
+            setIsAccountActive(true)
           }
         }
 
@@ -348,9 +354,15 @@ export default function DashboardPage() {
         {/* ── HEADER ── */}
         <header className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 sm:mb-12 gap-5 sm:gap-6 border-b border-white/[0.04] pb-6 sm:pb-8 relative">
           <div className="absolute top-0 left-1/2 -translate-x-1/2 w-3/4 h-[1px] bg-gradient-to-r from-transparent via-[#9b5de5]/50 to-transparent" />
-          <div className="w-full md:w-auto">
-            <h1 className="font-['Syne',sans-serif] text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mb-2 text-white drop-shadow-[0_0_15px_rgba(255,255,255,0.1)]">
-              Client Portal
+          {/* ambient header glow */}
+          <div className="absolute -top-20 left-1/4 w-72 h-40 bg-[#9b5de5]/10 blur-[90px] rounded-full pointer-events-none" />
+          <div className="w-full md:w-auto relative z-10">
+            <div className="inline-flex items-center gap-2 mb-3 px-3 py-1 rounded-full bg-[#9b5de5]/[0.08] border border-[#9b5de5]/20">
+              <span className="w-1.5 h-1.5 rounded-full bg-[#9b5de5] shadow-[0_0_8px_#9b5de5]" />
+              <span className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#c8b0e0] font-['Syne',sans-serif]">ProMail Suite</span>
+            </div>
+            <h1 className="font-['Syne',sans-serif] text-2xl sm:text-3xl md:text-4xl font-extrabold tracking-tight mb-2 text-white drop-shadow-[0_0_25px_rgba(155,93,229,0.2)]">
+              Client <span className="bg-clip-text text-transparent bg-gradient-to-r from-white via-[#c8b0e0] to-[#9b5de5]">Portal</span>
             </h1>
             <div className="flex flex-wrap items-center gap-3 sm:gap-4">
               <p className="text-[#8a80a0] text-xs md:text-sm flex items-center gap-2 font-medium tracking-wide break-all">
@@ -364,7 +376,7 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
-          <button onClick={handleSignOut} disabled={isLoggingOut} className="w-full md:w-auto text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all border border-white/[0.08] px-6 py-3 rounded-xl bg-[#070512]/80 hover:bg-white/[0.05] shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_15px_rgba(0,0,0,0.5)]">
+          <button onClick={handleSignOut} disabled={isLoggingOut} className="w-full md:w-auto relative z-10 text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all border border-white/[0.08] px-6 py-3 rounded-xl bg-[#070512]/80 hover:bg-white/[0.05] hover:border-[#9b5de5]/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_15px_rgba(0,0,0,0.5)]">
             {isLoggingOut ? 'Signing out...' : 'Sign Out'}
           </button>
         </header>
@@ -563,7 +575,15 @@ export default function DashboardPage() {
                                 <li className={`text-[11px] uppercase tracking-wider flex items-center gap-2 font-bold ${isSelected ? 'text-[#c8b0e0]' : 'text-[#6a6080]'}`}>
                                    <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#9b5de5] shadow-[0_0_5px_#9b5de5]' : 'bg-[#4a4060]'}`} /> Overage: {tier.overage_cost} USDT/email
                                 </li>
-                                {tier.features && tier.features.map((feat, i) => (
+                                {tier.features && tier.features.filter((feat: string) => {
+                                  // Hide stale feature text that duplicates the real
+                                  // email_limit / overage_cost columns (e.g. old seeded
+                                  // "Overage: 0.006 USDT/email" or "20k Monthly Limit").
+                                  const f = (feat || '').toLowerCase()
+                                  if (f.includes('overage')) return false
+                                  if (f.includes('monthly limit')) return false
+                                  return true
+                                }).map((feat, i) => (
                                 <li key={i} className={`text-[11px] uppercase tracking-wider flex items-center gap-2 font-bold ${isSelected ? 'text-[#c8b0e0]' : 'text-[#6a6080]'}`}>
                                     <div className={`w-1.5 h-1.5 rounded-full ${isSelected ? 'bg-[#9b5de5] shadow-[0_0_5px_#9b5de5]' : 'bg-[#4a4060]'}`} /> {feat}
                                 </li>
