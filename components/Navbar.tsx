@@ -3,10 +3,12 @@
 import { useEffect, useRef, useState } from 'react'
 import Link from 'next/link'
 import DownloadButton from '@/components/DownloadButton'
+import SetupGuideModal from '@/components/SetupGuideModal'
 
 export default function Navbar() {
   const [scrolled,  setScrolled]  = useState(false)
   const [menuOpen,  setMenuOpen]  = useState(false)
+  const [showGuide, setShowGuide] = useState(false)
   const navRef = useRef<HTMLElement>(null)
 
   useEffect(() => {
@@ -46,6 +48,10 @@ export default function Navbar() {
 
         {/* ── DESKTOP BUTTONS */}
         <div className="pm-actions">
+          <button className="pm-btn-guide" onClick={() => setShowGuide(true)}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.746 0 3.332.477 4.5 1.253v13C19.832 18.477 18.246 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"/></svg>
+            Guide
+          </button>
           <DownloadButton className="pm-btn-sec" align="right">
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
             Download App
@@ -85,6 +91,9 @@ export default function Navbar() {
             </Link>
           ))}
           {/* Mobile CTA buttons inside menu */}
+          <button className="pm-mobile-link" style={{ background:'none', border:'none', width:'100%', textAlign:'left', cursor:'pointer' }} onClick={() => { setMenuOpen(false); setShowGuide(true) }}>
+            📘 Setup Guide
+          </button>
           <div className="pm-mobile-btns">
             <DownloadButton className="pm-mobile-btn-sec" align="left">
               Download App
@@ -249,6 +258,32 @@ export default function Navbar() {
           box-shadow: 0 0 40px rgba(108,59,156,0.65), 0 6px 20px rgba(0,0,0,0.5);
         }
 
+        /* ══════ GUIDE BUTTON — gentle green↔purple flashing glow ══════ */
+        .pm-btn-guide {
+          display: flex; align-items: center; gap: 6px;
+          padding: 8px 16px; border-radius: 9px;
+          font-size: 12.5px; font-family: 'Syne', sans-serif; font-weight: 700;
+          color: #ffffff; cursor: pointer; white-space: nowrap;
+          background: rgba(10,7,20,0.6);
+          border: 1px solid rgba(155,93,229,0.5);
+          position: relative;
+          animation: guide-glow 3s ease-in-out infinite;
+          transition: transform 0.2s;
+        }
+        .pm-btn-guide:hover { transform: translateY(-2px); }
+        @keyframes guide-glow {
+          0%, 100% {
+            border-color: rgba(16,185,129,0.6);
+            box-shadow: 0 0 14px rgba(16,185,129,0.45), 0 0 28px rgba(16,185,129,0.2), inset 0 0 10px rgba(16,185,129,0.08);
+            color: #d6fff0;
+          }
+          50% {
+            border-color: rgba(155,93,229,0.7);
+            box-shadow: 0 0 18px rgba(155,93,229,0.55), 0 0 40px rgba(155,93,229,0.28), inset 0 0 12px rgba(155,93,229,0.1);
+            color: #ecdcff;
+          }
+        }
+
         /* ══════════════════════════════════════
            HAMBURGER (hidden on desktop)
         ══════════════════════════════════════ */
@@ -352,6 +387,7 @@ export default function Navbar() {
           .pm-links { display: none !important; }
           .pm-btn-sec { display: none !important; }
           .pm-btn-pri { display: none !important; }
+          .pm-btn-guide { display: none !important; }
           .pm-hamburger { display: flex !important; }
           .pm-logo-pro, .pm-logo-mail { font-size: 18px; }
           .pm-logo-dot { width: 6px; height: 6px; }
@@ -363,6 +399,8 @@ export default function Navbar() {
           .pm-logo-pro, .pm-logo-mail { font-size: 17px; }
         }
       `}</style>
+
+      {showGuide && <SetupGuideModal onClose={() => setShowGuide(false)} />}
     </>
   )
 }
