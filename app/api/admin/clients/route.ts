@@ -30,7 +30,10 @@ export async function GET(req: Request) {
         email: user.email,
         role: profile.role || 'client',
         api_key: profile.api_key || 'Not Generated',
-        balance: wallet.balance || 0
+        balance: wallet.balance || 0,
+        active_plan_id: profile.active_plan_id || null,
+        plan_expires_at: profile.plan_expires_at || null,
+        emails_sent: profile.emails_sent || 0
       }
     })
 
