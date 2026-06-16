@@ -64,6 +64,7 @@ export default function DashboardPage() {
 
   // Active Plan & Precise Countdown State
   const [activePlanId, setActivePlanId] = useState<string | null>(null)
+  const [pays, setPays] = useState<{ enabled: boolean; total: number; daily: number; usedTotal: number; usedToday: number; expiresAt: string | null } | null>(null)
   const [expiresAtDate, setExpiresAtDate] = useState<Date | null>(null)
   const [preciseCountdown, setPreciseCountdown] = useState<string>('Calculating...')
   const [emailsSent, setEmailsSent] = useState<number>(0)
@@ -146,6 +147,20 @@ export default function DashboardPage() {
           const bal = Number(walletRes.data?.balance) || 0
           // Always reflect the profile's plan + usage, regardless of wallet state.
           setEmailsSent(profileRes.data.emails_sent || 0)
+
+          // Pay-As-You-Send package (separate from subscriptions/wallet).
+          if (profileRes.data.pays_enabled) {
+            setPays({
+              enabled: true,
+              total: Number(profileRes.data.pays_total_quota) || 0,
+              daily: Number(profileRes.data.pays_daily_cap) || 0,
+              usedTotal: Number(profileRes.data.pays_used_total) || 0,
+              usedToday: Number(profileRes.data.pays_used_today) || 0,
+              expiresAt: profileRes.data.pays_expires_at || null,
+            })
+            setIsAccountActive(true) // a PAYS package counts as an active account
+          }
+
           if (dbPlan) {
             setActivePlanId(dbPlan)
             setIsAccountActive(true)
@@ -172,6 +187,20 @@ export default function DashboardPage() {
                 setActivePlanId(newDbPlan)
                 setIsUpgrading(false)
                 if (newDbExpires) setExpiresAtDate(new Date(newDbExpires))
+              }
+              // live PAYS updates (admin set/topped-up/disabled the package)
+              if (payload.new.pays_enabled) {
+                setPays({
+                  enabled: true,
+                  total: Number(payload.new.pays_total_quota) || 0,
+                  daily: Number(payload.new.pays_daily_cap) || 0,
+                  usedTotal: Number(payload.new.pays_used_total) || 0,
+                  usedToday: Number(payload.new.pays_used_today) || 0,
+                  expiresAt: payload.new.pays_expires_at || null,
+                })
+                setIsAccountActive(true)
+              } else if (payload.new.pays_enabled === false) {
+                setPays(null)
               }
             }
           )
@@ -380,6 +409,43 @@ export default function DashboardPage() {
             {isLoggingOut ? 'Signing out...' : 'Sign Out'}
           </button>
         </header>
+
+        {pays && pays.enabled && (
+          <section className="mb-8 sm:mb-10 relative overflow-hidden rounded-3xl sm:rounded-[2rem] border border-[#f59e0b]/25 bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 backdrop-blur-[50px] p-6 sm:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8)]">
+            <div className="absolute -top-24 -right-24 w-72 h-72 bg-[#f59e0b]/10 blur-[100px] rounded-full pointer-events-none" />
+            <div className="relative z-10">
+              <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
+                <h2 className="font-['Syne',sans-serif] text-[#f59e0b] font-bold text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-[#f59e0b] shadow-[0_0_10px_#f59e0b] animate-pulse" /> Pay-As-You-Send Package
+                </h2>
+                <span className="text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-[#10b981]/30 text-[#10b981] bg-[#10b981]/10 self-start">● Active</span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 sm:gap-6">
+                <div>
+                  <div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Emails Remaining</div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-[#10b981] font-mono drop-shadow-[0_0_15px_rgba(16,185,129,0.3)]">{Math.max(0, pays.total - pays.usedTotal).toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Total Package</div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-white font-mono">{pays.total.toLocaleString()}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Sent Today</div>
+                  <div className="text-2xl sm:text-3xl font-extrabold text-white font-mono">{pays.usedToday.toLocaleString()}{pays.daily > 0 && <span className="text-sm text-[#8a80a0]"> / {pays.daily.toLocaleString()}</span>}</div>
+                </div>
+                <div>
+                  <div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Expires</div>
+                  <div className="text-lg sm:text-xl font-bold text-white font-mono">{pays.expiresAt ? new Date(pays.expiresAt).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' }) : 'No Expiry'}</div>
+                </div>
+              </div>
+              {pays.total - pays.usedTotal <= 0 && (
+                <div className="mt-5 text-[11px] font-bold text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/30 px-4 py-3 rounded-xl">
+                  Your email allowance is used up. Please contact support to top up.
+                </div>
+              )}
+            </div>
+          </section>
+        )}
 
         <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 sm:gap-10">
 
