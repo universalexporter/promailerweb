@@ -149,7 +149,8 @@ export default function DashboardPage() {
           setEmailsSent(profileRes.data.emails_sent || 0)
 
           // Pay-As-You-Send package (separate from subscriptions/wallet).
-          if (profileRes.data.pays_enabled) {
+          const hasPays = !!profileRes.data.pays_enabled
+          if (hasPays) {
             setPays({
               enabled: true,
               total: Number(profileRes.data.pays_total_quota) || 0,
@@ -165,8 +166,9 @@ export default function DashboardPage() {
             setActivePlanId(dbPlan)
             setIsAccountActive(true)
             if (dbExpires) setExpiresAtDate(new Date(dbExpires))
-          } else if (bal > 0) {
-            // No subscription but has wallet funds → still an active (pay-as-you-go) account.
+          } else if (bal > 0 && !hasPays) {
+            // No subscription but has wallet funds → active pay-as-you-go account.
+            // (Skip this for PAYS clients — PAYS is already their plan.)
             setActivePlanId('starter')
             setIsAccountActive(true)
           }
@@ -358,6 +360,8 @@ export default function DashboardPage() {
   const isOutOfFunds = isAccountActive && walletBalance <= 0 && !hasPlanEmailsLeft
 
   const isPlanExpired = preciseCountdown === 'EXPIRED'
+  // A client whose only active plan is Pay-As-You-Send (no real subscription).
+  const isPaysOnly = !!(pays && pays.enabled && !activePlanId)
   const usagePercentage = currentPlanObj.email_limit > 0 ? Math.min(100, (emailsSent / currentPlanObj.email_limit) * 100) : 0
 
   // ─── 9. MAIN UI RENDER ────────────────────────────────────────────────────
@@ -549,11 +553,13 @@ export default function DashboardPage() {
                     <div className="flex justify-between items-start mb-6 gap-3">
                       <div>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">Active Plan</div>
-                        <div className="text-xl sm:text-2xl font-bold text-white font-['Syne',sans-serif]">{currentPlanObj.name}</div>
+                        <div className="text-xl sm:text-2xl font-bold text-white font-['Syne',sans-serif]">{isPaysOnly ? 'Pay-As-You-Send' : currentPlanObj.name}</div>
                       </div>
                       <div className="text-right">
-                        <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">Time Remaining</div>
-                        {isPlanExpired ? (
+                        <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">{isPaysOnly ? 'Package Expires' : 'Time Remaining'}</div>
+                        {isPaysOnly ? (
+                          <div className="text-[#f59e0b] font-mono font-bold text-sm bg-[#f59e0b]/10 px-3 py-1.5 rounded-lg border border-[#f59e0b]/30 shadow-inner tracking-wide">{pays?.expiresAt ? new Date(pays.expiresAt).toLocaleDateString([], { month: 'short', day: 'numeric' }) : 'No Expiry'}</div>
+                        ) : isPlanExpired ? (
                           <div className="text-red-400 font-bold text-sm bg-red-500/10 px-3 py-1 rounded border border-red-500/30">EXPIRED</div>
                         ) : (
                           <div className="text-[#9b5de5] font-mono font-bold text-sm bg-[#9b5de5]/10 px-3 py-1.5 rounded-lg border border-[#9b5de5]/30 shadow-inner tracking-widest">{preciseCountdown}</div>
@@ -562,11 +568,11 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mb-2 flex justify-between text-[11px] font-bold text-white">
-                      <span className="uppercase tracking-widest text-[#8a80a0]">Monthly Usage</span>
-                      <span className="font-mono text-[#9b5de5]">{emailsSent.toLocaleString()} / {currentPlanObj.email_limit?.toLocaleString()}</span>
+                      <span className="uppercase tracking-widest text-[#8a80a0]">{isPaysOnly ? 'Emails Used' : 'Monthly Usage'}</span>
+                      <span className="font-mono text-[#9b5de5]">{isPaysOnly ? `${(pays?.usedTotal || 0).toLocaleString()} / ${(pays?.total || 0).toLocaleString()}` : `${emailsSent.toLocaleString()} / ${currentPlanObj.email_limit?.toLocaleString()}`}</span>
                     </div>
                     <div className="relative w-full h-2 bg-[#020106] rounded-full shadow-inner border border-white/[0.05] overflow-hidden">
-                      <div className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${usagePercentage > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5]'}`} style={{ width: `${usagePercentage}%` }} />
+                      <div className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${usagePercentage > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5]'}`} style={{ width: `${isPaysOnly ? (pays && pays.total > 0 ? Math.min(100, (pays.usedTotal / pays.total) * 100) : 0) : usagePercentage}%` }} />
                     </div>
                   </div>
 
@@ -584,12 +590,18 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  <button onClick={() => setIsUpgrading(true)} className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] mt-auto shrink-0">
-                    <span className="absolute inset-0 bg-gradient-to-r from-white/10 via-white/30 to-white/10 opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
-                    <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
-                      <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">Upgrade Plan</span>
+                  {isPaysOnly ? (
+                    <div className="w-full mt-auto shrink-0 text-center bg-[#f59e0b]/[0.06] border border-[#f59e0b]/20 rounded-xl px-6 py-4">
+                      <span className="font-['Syne',sans-serif] font-bold text-[#f5c97a] text-[10px] uppercase tracking-[0.15em]">You're on a Pay-As-You-Send package · Contact support to top up</span>
                     </div>
-                  </button>
+                  ) : (
+                    <button onClick={() => setIsUpgrading(true)} className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] mt-auto shrink-0">
+                      <span className="absolute inset-0 bg-gradient-to-r from-white/10 via-white/30 to-white/10 opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                      <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
+                        <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">Upgrade Plan</span>
+                      </div>
+                    </button>
+                  )}
                 </div>
               ) : (
 
