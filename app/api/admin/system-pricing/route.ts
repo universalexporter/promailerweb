@@ -33,8 +33,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No pricing rows were sent.' }, { status: 400 })
     }
 
-    // Only send columns that exist on the table, and coerce numeric fields so a
-    // stray string can't make the upsert silently fail.
+    // Coerce numeric fields so a stray string can't make the write fail,
+    // and only pass the columns the table actually has.
     const clean = updates.map((u: any) => ({
       id: u.id,
       name: u.name,
@@ -44,14 +44,16 @@ export async function POST(req: Request) {
       features: Array.isArray(u.features) ? u.features : [],
     }))
 
-    // Explicit conflict target on the primary key so existing rows update
-    // instead of erroring on a duplicate id.
-    const { error } = await supabaseAdmin
+    // Plain upsert — this is exactly what worked originally. Supabase matches
+    // on the table's primary key (id) automatically, so passing the id updates
+    // the existing row instead of creating a duplicate.
+    const { data, error } = await supabaseAdmin
       .from('system_pricing')
-      .upsert(clean, { onConflict: 'id' })
+      .upsert(clean)
+      .select()
 
     if (error) throw error
-    return NextResponse.json({ success: true, saved: clean.length }, { status: 200 })
+    return NextResponse.json({ success: true, saved: data?.length ?? clean.length }, { status: 200 })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
