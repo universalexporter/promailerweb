@@ -76,13 +76,13 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 2147483646,
-        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
-        padding: '20px',
+        display: 'block',
         background: 'rgba(2,1,6,0.82)',
         backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         animation: 'sg-fade 0.25s ease-out',
-        overflowY: 'auto',
+        overflowY: 'scroll',
         WebkitOverflowScrolling: 'touch',
+        padding: '40px 20px',
       }}
     >
       <div
@@ -90,7 +90,7 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
         className="sg-card"
         style={{
           position: 'relative', width: '100%', maxWidth: '760px',
-          margin: 'auto',
+          margin: '0 auto',
           background: 'linear-gradient(180deg, rgba(12,8,22,0.98) 0%, rgba(6,4,14,0.98) 100%)',
           border: '1px solid rgba(155,93,229,0.25)',
           borderRadius: '28px',

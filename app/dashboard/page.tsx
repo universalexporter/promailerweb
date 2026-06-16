@@ -288,6 +288,39 @@ export default function DashboardPage() {
     await supabase.from('support_messages').insert({ ticket_id: chatTicketId, sender_id: userId, message: msgToSend })
   }
 
+  const [requestingSetup, setRequestingSetup] = useState(false)
+  const handleRequestPrivateSetup = async () => {
+    if (!userId || requestingSetup) return
+    setRequestingSetup(true)
+    try {
+      // Make sure a ticket exists
+      let ticketId = chatTicketId
+      if (!ticketId) {
+        let { data: ticket } = await supabase.from('support_tickets').select('id').eq('user_id', userId).single()
+        if (!ticket) {
+          const { data: nt } = await supabase.from('support_tickets').insert({ user_id: userId }).select().single()
+          ticket = nt
+        }
+        ticketId = ticket?.id || null
+        setChatTicketId(ticketId)
+      }
+      if (!ticketId) throw new Error('Could not open a support ticket.')
+
+      // Open the chat and send the client's request message
+      setIsChatOpen(true)
+      await supabase.from('support_messages').insert({
+        ticket_id: ticketId,
+        sender_id: userId,
+        message: "I'd like help setting up my account manually. Please assist me."
+      })
+    } catch (err) {
+      console.error('Private setup request failed:', err)
+      alert('Could not start the request. Please try the chat directly.')
+    } finally {
+      setRequestingSetup(false)
+    }
+  }
+
   const handleChatImageUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
     if (!file || !userId || !chatTicketId) return
@@ -414,13 +447,29 @@ export default function DashboardPage() {
           </button>
         </header>
 
+        {/* ── Request Private Setup banner ── */}
+        <section className="mb-8 sm:mb-10 relative overflow-hidden rounded-2xl sm:rounded-3xl border border-[#9b5de5]/25 bg-gradient-to-r from-[#9b5de5]/[0.08] via-[#0a0614]/60 to-[#10b981]/[0.06] backdrop-blur-xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.7)]">
+          <div className="absolute -top-16 -left-10 w-56 h-32 bg-[#9b5de5]/10 blur-[80px] rounded-full pointer-events-none" />
+          <div className="relative z-10">
+            <h3 className="font-['Syne',sans-serif] font-bold text-white text-base sm:text-lg tracking-tight mb-1.5 flex items-center gap-2">
+              <span className="text-lg">🚀</span> New here? Let us set it up for you.
+            </h3>
+            <p className="text-[#9888ad] text-xs sm:text-[13px] leading-relaxed max-w-xl">
+              Never done email outreach before? Request private setup and our team can guide you from zero to your first send — domain, DNS, warm-up, everything.
+            </p>
+          </div>
+          <button onClick={handleRequestPrivateSetup} disabled={requestingSetup} className="relative z-10 shrink-0 w-full sm:w-auto font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.15em] px-6 py-3.5 rounded-xl bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5] shadow-[0_0_30px_rgba(155,93,229,0.4)] hover:shadow-[0_0_50px_rgba(155,93,229,0.6)] hover:-translate-y-0.5 transition-all disabled:opacity-50">
+            {requestingSetup ? 'Opening chat...' : 'Request Private Setup'}
+          </button>
+        </section>
+
         {pays && pays.enabled && (
           <section className="mb-8 sm:mb-10 relative overflow-hidden rounded-3xl sm:rounded-[2rem] border border-[#f59e0b]/25 bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 backdrop-blur-[50px] p-6 sm:p-8 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8)]">
             <div className="absolute -top-24 -right-24 w-72 h-72 bg-[#f59e0b]/10 blur-[100px] rounded-full pointer-events-none" />
             <div className="relative z-10">
               <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 mb-6">
                 <h2 className="font-['Syne',sans-serif] text-[#f59e0b] font-bold text-[11px] uppercase tracking-[0.2em] flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-[#f59e0b] shadow-[0_0_10px_#f59e0b] animate-pulse" /> Pay-As-You-Send Package
+                  <span className="w-2 h-2 rounded-full bg-[#f59e0b] shadow-[0_0_10px_#f59e0b] animate-pulse" /> Test Plan Package
                 </h2>
                 <span className="text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-[#10b981]/30 text-[#10b981] bg-[#10b981]/10 self-start">● Active</span>
               </div>
@@ -553,7 +602,7 @@ export default function DashboardPage() {
                     <div className="flex justify-between items-start mb-6 gap-3">
                       <div>
                         <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">Active Plan</div>
-                        <div className="text-xl sm:text-2xl font-bold text-white font-['Syne',sans-serif]">{isPaysOnly ? 'Pay-As-You-Send' : currentPlanObj.name}</div>
+                        <div className="text-xl sm:text-2xl font-bold text-white font-['Syne',sans-serif]">{isPaysOnly ? 'Test Plan' : currentPlanObj.name}</div>
                       </div>
                       <div className="text-right">
                         <div className="text-[10px] uppercase tracking-[0.2em] text-[#8a80a0] font-bold mb-1">{isPaysOnly ? 'Package Expires' : 'Time Remaining'}</div>
@@ -590,18 +639,12 @@ export default function DashboardPage() {
                     </div>
                   </div>
 
-                  {isPaysOnly ? (
-                    <div className="w-full mt-auto shrink-0 text-center bg-[#f59e0b]/[0.06] border border-[#f59e0b]/20 rounded-xl px-6 py-4">
-                      <span className="font-['Syne',sans-serif] font-bold text-[#f5c97a] text-[10px] uppercase tracking-[0.15em]">You're on a Pay-As-You-Send package · Contact support to top up</span>
+                  <button onClick={() => setIsUpgrading(true)} className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] mt-auto shrink-0">
+                    <span className="absolute inset-0 bg-gradient-to-r from-white/10 via-white/30 to-white/10 opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
+                    <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
+                      <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">{isPaysOnly ? 'Upgrade to a Full Plan' : 'Upgrade Plan'}</span>
                     </div>
-                  ) : (
-                    <button onClick={() => setIsUpgrading(true)} className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] mt-auto shrink-0">
-                      <span className="absolute inset-0 bg-gradient-to-r from-white/10 via-white/30 to-white/10 opacity-80 group-hover/btn:opacity-100 transition-opacity duration-300" />
-                      <div className="relative flex items-center justify-center bg-[#070512] rounded-xl px-8 py-4 transition-all duration-300 group-hover/btn:bg-transparent">
-                        <span className="font-['Syne',sans-serif] font-bold text-white text-[11px] uppercase tracking-[0.2em]">Upgrade Plan</span>
-                      </div>
-                    </button>
-                  )}
+                  </button>
                 </div>
               ) : (
 

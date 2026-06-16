@@ -101,6 +101,12 @@ export default function SupportDesk() {
   const [paysDaily, setPaysDaily] = useState('')
   const [paysDays, setPaysDays] = useState('')
   const [paysSaving, setPaysSaving] = useState(false)
+  // Canned (ready) messages
+  const [cannedMsgs, setCannedMsgs] = useState<any[]>([])
+  const [cannedOpen, setCannedOpen] = useState(false)
+  const [cannedEditId, setCannedEditId] = useState<string | null>(null)
+  const [cannedForm, setCannedForm] = useState({ category: '', title: '', body: '' })
+  const [cannedManage, setCannedManage] = useState(false)
   const [txnSearch, setTxnSearch] = useState('')
 
   const [modal, setModal] = useState<ModalState>({
@@ -139,6 +145,7 @@ export default function SupportDesk() {
       fetchMasterDatabase()
       fetchSystemPricing()
       fetchTransactions()
+      fetchCanned()
     }
     initializeAdmin()
   }, [router])
@@ -447,6 +454,59 @@ export default function SupportDesk() {
     await supabase.from('support_messages').insert({
       ticket_id: ticketId, sender_id: session.user.id, message: msgToSend
     })
+  }
+
+  // ── Canned (ready) messages ──
+  const fetchCanned = async () => {
+    try {
+      const res = await fetch('/api/admin/canned-messages')
+      if (!res.ok) return
+      const data = await res.json()
+      if (data.messages) setCannedMsgs(data.messages)
+    } catch (e) { console.error('canned fetch failed', e) }
+  }
+
+  const sendCanned = async (text: string) => {
+    if (!ticketId || !selectedClient) return
+    const { data: { session } } = await supabase.auth.getSession()
+    if (!session) return
+    await supabase.from('support_messages').insert({
+      ticket_id: ticketId, sender_id: session.user.id, message: text
+    })
+    setCannedOpen(false)
+  }
+
+  const saveCanned = async () => {
+    if (!cannedForm.title.trim() || !cannedForm.body.trim()) { alert('Title and message are required.'); return }
+    try {
+      const payload: any = cannedEditId
+        ? { action: 'update', id: cannedEditId, ...cannedForm }
+        : { action: 'create', ...cannedForm }
+      const res = await fetch('/api/admin/canned-messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d?.error || 'Save failed') }
+      setCannedForm({ category: '', title: '', body: '' })
+      setCannedEditId(null)
+      await fetchCanned()
+    } catch (e: any) { alert(`Error: ${e.message}`) }
+  }
+
+  const deleteCanned = async (id: string) => {
+    if (!confirm('Delete this ready message?')) return
+    try {
+      const res = await fetch('/api/admin/canned-messages', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ action: 'delete', id })
+      })
+      if (!res.ok) throw new Error('Delete failed')
+      await fetchCanned()
+    } catch (e: any) { alert(`Error: ${e.message}`) }
+  }
+
+  const editCanned = (m: any) => {
+    setCannedEditId(m.id)
+    setCannedForm({ category: m.category, title: m.title, body: m.body })
+    setCannedManage(true)
   }
 
   const openOverrideModal = (type: ModalState['type']) => {
@@ -885,9 +945,67 @@ export default function SupportDesk() {
                   )}
                   <div ref={messagesEndRef} />
                 </div>
+                {/* ── READY MESSAGES PANEL ── */}
+                {cannedOpen && (
+                  <div className="shrink-0 border-t border-white/[0.08] bg-[#070512] max-h-[45vh] overflow-y-auto custom-scrollbar">
+                    <div className="sticky top-0 bg-[#070512] border-b border-white/[0.06] px-4 sm:px-6 py-3 flex items-center justify-between gap-3 z-10">
+                      <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#9b5de5]">Ready Messages</span>
+                      <div className="flex gap-2">
+                        <button onClick={() => { setCannedManage(m => !m); setCannedEditId(null); setCannedForm({ category: '', title: '', body: '' }) }} className="text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 text-[#8a80a0] hover:text-white transition-all">{cannedManage ? 'Done' : '+ Manage'}</button>
+                        <button onClick={() => setCannedOpen(false)} className="text-[9px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border border-white/10 text-[#8a80a0] hover:text-white transition-all">Close</button>
+                      </div>
+                    </div>
+
+                    {cannedManage && (
+                      <div className="p-4 sm:p-5 border-b border-white/[0.06] bg-white/[0.02] space-y-3">
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <input value={cannedForm.category} onChange={(e) => setCannedForm(f => ({ ...f, category: e.target.value }))} placeholder="Category (e.g. Greetings)" className="bg-[#020106] border border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#9b5de5]/50 placeholder:text-[#8a80a0]" />
+                          <input value={cannedForm.title} onChange={(e) => setCannedForm(f => ({ ...f, title: e.target.value }))} placeholder="Short title (e.g. Welcome)" className="bg-[#020106] border border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#9b5de5]/50 placeholder:text-[#8a80a0]" />
+                        </div>
+                        <textarea value={cannedForm.body} onChange={(e) => setCannedForm(f => ({ ...f, body: e.target.value }))} placeholder="The full message text..." rows={3} className="w-full bg-[#020106] border border-white/[0.08] rounded-lg px-3 py-2.5 text-xs text-white focus:outline-none focus:border-[#9b5de5]/50 placeholder:text-[#8a80a0] resize-none" />
+                        <div className="flex gap-2">
+                          <button onClick={saveCanned} className="px-4 py-2 bg-[#9b5de5] text-white rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-[#8040cd] transition-all">{cannedEditId ? 'Update' : 'Add Message'}</button>
+                          {cannedEditId && <button onClick={() => { setCannedEditId(null); setCannedForm({ category: '', title: '', body: '' }) }} className="px-4 py-2 bg-white/5 text-[#8a80a0] rounded-lg text-[10px] font-bold uppercase tracking-widest border border-white/10">Cancel Edit</button>}
+                        </div>
+                      </div>
+                    )}
+
+                    <div className="p-4 sm:p-5 space-y-4">
+                      {cannedMsgs.length === 0 ? (
+                        <div className="text-center text-[#8a80a0] text-xs font-mono py-6">No ready messages yet. Click "+ Manage" to add some.</div>
+                      ) : (
+                        Object.entries(cannedMsgs.reduce((acc: any, m: any) => { (acc[m.category] = acc[m.category] || []).push(m); return acc }, {})).map(([cat, msgs]: any) => (
+                          <div key={cat}>
+                            <div className="text-[9px] font-bold uppercase tracking-[0.2em] text-[#8a80a0] mb-2">{cat}</div>
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                              {msgs.map((m: any) => (
+                                <div key={m.id} className="group bg-white/[0.02] border border-white/[0.06] rounded-xl p-3 hover:border-[#9b5de5]/30 transition-all">
+                                  <div className="flex items-start justify-between gap-2 mb-1.5">
+                                    <span className="text-[11px] font-bold text-white">{m.title}</span>
+                                    {cannedManage && (
+                                      <div className="flex gap-1.5 shrink-0">
+                                        <button onClick={() => editCanned(m)} className="text-[8px] font-bold uppercase text-[#8a80a0] hover:text-[#9b5de5]">Edit</button>
+                                        <button onClick={() => deleteCanned(m.id)} className="text-[8px] font-bold uppercase text-[#8a80a0] hover:text-red-400">Del</button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <p className="text-[10.5px] text-[#9888ad] leading-snug mb-2.5 line-clamp-3">{m.body}</p>
+                                  {!cannedManage && (
+                                    <button onClick={() => sendCanned(m.body)} className="w-full py-2 bg-[#9b5de5]/10 text-[#9b5de5] border border-[#9b5de5]/25 rounded-lg text-[9px] font-bold uppercase tracking-widest hover:bg-[#9b5de5] hover:text-white transition-all">Send This</button>
+                                  )}
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  </div>
+                )}
+
                 <form onSubmit={handleSendMessage} className="shrink-0 p-4 sm:p-6 bg-black/80 border-t border-white/[0.08] backdrop-blur-xl z-20">
                   <div className="flex gap-3 sm:gap-4 max-w-6xl mx-auto items-center">
-                    <div className="w-2 h-2 rounded-full bg-[#10b981] shadow-[0_0_10px_#10b981] animate-pulse shrink-0"></div>
+                    <button type="button" onClick={() => setCannedOpen(o => !o)} className="shrink-0 px-4 py-4 bg-[#9b5de5]/10 text-[#9b5de5] border border-[#9b5de5]/30 rounded-xl text-[10px] font-bold uppercase tracking-widest hover:bg-[#9b5de5] hover:text-white transition-all" title="Ready Messages">⚡</button>
                     <input type="text" value={newMessage} onChange={(e) => setNewMessage(e.target.value)} placeholder="Transmit encrypted directive..." className="flex-1 min-w-0 bg-white/[0.03] border border-white/[0.08] rounded-xl px-4 sm:px-6 py-4 text-white focus:outline-none focus:border-[#9b5de5] focus:ring-1 focus:ring-[#9b5de5]/50 transition-all text-sm font-mono shadow-[inset_0_2px_10px_rgba(0,0,0,0.5)] placeholder:text-[#8a80a0]/50" />
                     <button type="submit" disabled={!newMessage.trim()} className="shrink-0 px-6 sm:px-12 py-4 bg-white text-black font-extrabold uppercase tracking-[0.2em] text-[10px] rounded-xl hover:bg-[#9b5de5] hover:text-white transition-all disabled:opacity-50 hover:shadow-[0_0_30px_rgba(155,93,229,0.4)]">Send</button>
                   </div>
