@@ -49,7 +49,8 @@ export async function POST(req: Request) {
         .from('profiles')
         .update({
           active_plan_id: isRevoking ? null : value,
-          plan_expires_at: isRevoking ? null : expiresAt.toISOString()
+          plan_expires_at: isRevoking ? null : expiresAt.toISOString(),
+          pays_enabled: false  // a real plan replaces the Test package
         })
         .eq('id', userId)
 
@@ -106,7 +107,9 @@ export async function POST(req: Request) {
           pays_used_total: 0,        // fresh package resets usage
           pays_used_today: 0,
           pays_today_date: new Date().toISOString().slice(0, 10),
-          pays_expires_at: expiresAt // null = no expiry
+          pays_expires_at: expiresAt, // null = no expiry
+          active_plan_id: null,       // Test replaces any old subscription
+          plan_expires_at: null
         })
         .eq('id', userId)
       if (error) throw error

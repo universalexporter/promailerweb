@@ -107,6 +107,7 @@ export default function SupportDesk() {
   const [cannedEditId, setCannedEditId] = useState<string | null>(null)
   const [cannedForm, setCannedForm] = useState({ category: '', title: '', body: '' })
   const [cannedManage, setCannedManage] = useState(false)
+  const [unreadClients, setUnreadClients] = useState<Record<string, boolean>>({})
   const [txnSearch, setTxnSearch] = useState('')
 
   const [modal, setModal] = useState<ModalState>({
@@ -424,6 +425,8 @@ export default function SupportDesk() {
       if (domains) setClientDomains(domains)
     }
     loadClientSpecifics()
+    // opening a client clears their unread flag
+    setUnreadClients(prev => { const n = { ...prev }; delete n[selectedClient.id]; return n })
 
     const channel = supabase
       .channel('admin_support_chat')
@@ -437,6 +440,28 @@ export default function SupportDesk() {
       .subscribe()
     return () => { supabase.removeChannel(channel) }
   }, [selectedClient])
+
+  // Global listener: notify + flag unread for ANY client message, even when
+  // that client isn't currently open in the desk.
+  useEffect(() => {
+    if (clients.length === 0) return
+    const clientIds = new Set(clients.map(c => c.id))
+    const globalChannel = supabase
+      .channel('admin_global_inbox')
+      .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, (payload) => {
+        const m = payload.new
+        // only react to messages SENT BY a client (not our own replies)
+        if (m.sender_id && clientIds.has(m.sender_id)) {
+          // ignore if it's the client we're already viewing (handled above)
+          if (!selectedClient || m.sender_id !== selectedClient.id) {
+            playTick()
+            setUnreadClients(prev => ({ ...prev, [m.sender_id]: true }))
+          }
+        }
+      })
+      .subscribe()
+    return () => { supabase.removeChannel(globalChannel) }
+  }, [clients, selectedClient])
 
   useEffect(() => {
     if (activeTab === 'chat') {
@@ -712,6 +737,11 @@ export default function SupportDesk() {
                     <span className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-bold ${selectedIds.includes(client.id) ? 'bg-red-500 border-red-500 text-white' : 'border-white/20 text-transparent'}`}>✓</span>
                   )}
                   <div className={`font-bold text-sm truncate transition-colors flex-1 ${selectedClient?.id === client.id && activeTab !== 'global' ? 'text-white' : 'text-[#8a80a0] group-hover:text-white'}`}>{client.email}</div>
+                  {unreadClients[client.id] && (
+                    <span className="shrink-0 flex items-center gap-1.5 bg-[#10b981]/15 border border-[#10b981]/40 text-[#10b981] text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded-md animate-pulse">
+                      <span className="w-1.5 h-1.5 rounded-full bg-[#10b981] shadow-[0_0_6px_#10b981]" /> New
+                    </span>
+                  )}
                 </div>
                 <div className="flex justify-between items-center mt-3 text-xs">
                   <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-bold ${client.role === 'admin' ? 'bg-[#9b5de5]/20 text-[#9b5de5]' : 'bg-white/5 text-[#8a80a0]'}`}>{client.role}</span>
@@ -917,8 +947,8 @@ export default function SupportDesk() {
             </div>
 
             {activeTab === 'chat' && (
-              <div className="flex flex-col animate-[fadeIn_0.3s_ease-out]" style={{ height: 'min(70vh, 640px)' }}>
-                <div className="flex-1 overflow-y-auto p-5 sm:p-8 space-y-6 custom-scrollbar">
+              <div className="flex flex-col min-h-0 animate-[fadeIn_0.3s_ease-out]" style={{ height: 'min(70vh, 640px)' }}>
+                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-8 space-y-6 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
                   {messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-[#8a80a0] opacity-50">
                       <span className="text-sm font-mono uppercase tracking-widest text-center">Comm-Link Established. Awaiting Input.</span>

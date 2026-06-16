@@ -311,7 +311,7 @@ export default function DashboardPage() {
       await supabase.from('support_messages').insert({
         ticket_id: ticketId,
         sender_id: userId,
-        message: "I'd like help setting up my account manually. Please assist me."
+        message: "🚀 PRIVATE SETUP REQUEST\n\nHi! I'm new to email outreach and I'd like your team to set up my account for me from start to finish — domain, DNS, sending email, and warm-up. I've never done this before and would really appreciate full hands-on assistance. Please let me know how we can get started!"
       })
     } catch (err) {
       console.error('Private setup request failed:', err)
