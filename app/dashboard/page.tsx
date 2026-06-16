@@ -132,7 +132,9 @@ export default function DashboardPage() {
         ])
 
         if (pricingRes.pricing && pricingRes.pricing.length > 0) {
-          setDynamicTiers(pricingRes.pricing)
+          // Exclude the hidden 'ledger_rate' row — that is only for the homepage
+          // animation, never a real client plan.
+          setDynamicTiers(pricingRes.pricing.filter((p: any) => p.id !== 'ledger_rate'))
         } else {
           console.warn('No pricing data found in global table.')
         }
@@ -295,7 +297,10 @@ export default function DashboardPage() {
       if (data.checkout_url && paymentWindow) paymentWindow.location.href = data.checkout_url
       else {
         if (paymentWindow) paymentWindow.close()
-        alert('Payment gateway routing error. Please contact support.')
+        // Show the REAL reason from CoinPayments so issues are diagnosable.
+        const reason = data?.error ? String(data.error) : 'Unknown gateway error'
+        console.error('Checkout gateway error:', reason)
+        alert(`Payment could not be started:\n\n${reason}\n\nIf this persists, contact support.`)
       }
     } catch (error) {
       console.error('Checkout failed:', error)
