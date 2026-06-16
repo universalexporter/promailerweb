@@ -36,6 +36,12 @@ export async function GET(req: Request) {
         active_plan_id: profile.active_plan_id || null,
         plan_expires_at: profile.plan_expires_at || null,
         emails_sent: profile.emails_sent || 0,
+        pays_enabled: profile.pays_enabled || false,
+        pays_total_quota: profile.pays_total_quota || 0,
+        pays_daily_cap: profile.pays_daily_cap || 0,
+        pays_used_total: profile.pays_used_total || 0,
+        pays_used_today: profile.pays_used_today || 0,
+        pays_expires_at: profile.pays_expires_at || null,
         domains: userDomains.map(d => ({
           id: d.id,
           domain_name: d.domain_name,

@@ -71,7 +71,49 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
-    // 4. FULL DELETE — wipes the user from Supabase Auth AND their data.
+    // 4. PAY-AS-YOU-SEND — set or clear a manual email package.
+    // value is a JSON string: { enabled, total_quota, daily_cap, days }
+    if (action === 'pays') {
+      let cfg: any = {}
+      try { cfg = typeof value === 'string' ? JSON.parse(value) : (value || {}) } catch { cfg = {} }
+
+      if (cfg.enabled === false) {
+        // turn PAYS off (keeps counters but disables sending via PAYS)
+        const { error } = await supabaseAdmin
+          .from('profiles')
+          .update({ pays_enabled: false })
+          .eq('id', userId)
+        if (error) throw error
+        return NextResponse.json({ success: true, pays: 'disabled' }, { status: 200 })
+      }
+
+      const totalQuota = Math.max(0, Number(cfg.total_quota) || 0)
+      const dailyCap = Math.max(0, Number(cfg.daily_cap) || 0)
+      const days = Number(cfg.days)
+      let expiresAt: string | null = null
+      if (days && days > 0) {
+        const d = new Date()
+        d.setDate(d.getDate() + days)
+        expiresAt = d.toISOString()
+      }
+
+      const { error } = await supabaseAdmin
+        .from('profiles')
+        .update({
+          pays_enabled: true,
+          pays_total_quota: totalQuota,
+          pays_daily_cap: dailyCap,
+          pays_used_total: 0,        // fresh package resets usage
+          pays_used_today: 0,
+          pays_today_date: new Date().toISOString().slice(0, 10),
+          pays_expires_at: expiresAt // null = no expiry
+        })
+        .eq('id', userId)
+      if (error) throw error
+      return NextResponse.json({ success: true, pays: 'enabled' }, { status: 200 })
+    }
+
+    // 5. FULL DELETE — wipes the user from Supabase Auth AND their data.
     // Deleting the auth user is the key step; related rows are best-effort
     // cleaned first so nothing is orphaned.
     if (action === 'delete') {

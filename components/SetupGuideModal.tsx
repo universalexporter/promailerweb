@@ -68,19 +68,21 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
       onClick={onClose}
       style={{
         position: 'fixed', inset: 0, zIndex: 2147483646,
-        display: 'flex', alignItems: 'center', justifyContent: 'center',
+        display: 'flex', alignItems: 'flex-start', justifyContent: 'center',
         padding: '20px',
         background: 'rgba(2,1,6,0.82)',
         backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         animation: 'sg-fade 0.25s ease-out',
+        overflowY: 'auto',
+        WebkitOverflowScrolling: 'touch',
       }}
     >
       <div
         onClick={(e) => e.stopPropagation()}
         className="sg-card"
         style={{
-          position: 'relative', width: '100%', maxWidth: '760px', maxHeight: '88vh',
-          overflowY: 'auto',
+          position: 'relative', width: '100%', maxWidth: '760px',
+          margin: 'auto',
           background: 'linear-gradient(180deg, rgba(12,8,22,0.98) 0%, rgba(6,4,14,0.98) 100%)',
           border: '1px solid rgba(155,93,229,0.25)',
           borderRadius: '28px',
@@ -89,13 +91,10 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
         }}
       >
         {/* Glowing top hairline */}
-        <div style={{ position: 'sticky', top: 0, height: '2px', background: 'linear-gradient(to right, transparent, #10b981, #9b5de5, transparent)', zIndex: 3 }} />
+        <div style={{ height: '2px', background: 'linear-gradient(to right, transparent, #10b981, #9b5de5, transparent)', borderRadius: '28px 28px 0 0' }} />
 
         {/* Header */}
         <div style={{
-          position: 'sticky', top: '2px', zIndex: 2,
-          background: 'linear-gradient(180deg, rgba(12,8,22,0.98), rgba(12,8,22,0.92))',
-          backdropFilter: 'blur(8px)',
           padding: 'clamp(24px,4vw,36px) clamp(24px,4vw,40px) 20px',
           borderBottom: '1px solid rgba(255,255,255,0.06)',
         }}>

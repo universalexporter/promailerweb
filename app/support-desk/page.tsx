@@ -13,6 +13,12 @@ type ClientData = {
   active_plan_id: string | null
   plan_expires_at: string | null
   emails_sent?: number
+  pays_enabled?: boolean
+  pays_total_quota?: number
+  pays_daily_cap?: number
+  pays_used_total?: number
+  pays_used_today?: number
+  pays_expires_at?: string | null
   domains?: { id: string; domain_name: string; status: string; dns_records: any[] }[]
 }
 
@@ -90,6 +96,11 @@ export default function SupportDesk() {
   const [deletingId, setDeletingId] = useState<string | null>(null)
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [paysModal, setPaysModal] = useState(false)
+  const [paysQuota, setPaysQuota] = useState('')
+  const [paysDaily, setPaysDaily] = useState('')
+  const [paysDays, setPaysDays] = useState('')
+  const [paysSaving, setPaysSaving] = useState(false)
   const [txnSearch, setTxnSearch] = useState('')
 
   const [modal, setModal] = useState<ModalState>({
@@ -275,6 +286,67 @@ export default function SupportDesk() {
     setSelectedIds([]); setSelectMode(false); setDeletingId(null)
     await fetchMasterDatabase()
     alert(failed.length ? `Deleted ${deleted.length}. ${failed.length} failed.` : `Deleted ${deleted.length} client(s).`)
+  }
+
+  const openPaysModal = () => {
+    if (!selectedClient) return
+    setPaysQuota(selectedClient.pays_total_quota ? String(selectedClient.pays_total_quota) : '')
+    setPaysDaily(selectedClient.pays_daily_cap ? String(selectedClient.pays_daily_cap) : '')
+    setPaysDays('')
+    setPaysModal(true)
+  }
+
+  const handleSavePays = async () => {
+    if (!selectedClient) return
+    setPaysSaving(true)
+    try {
+      const cfg = {
+        enabled: true,
+        total_quota: Number(paysQuota) || 0,
+        daily_cap: Number(paysDaily) || 0,
+        days: paysDays ? Number(paysDays) : 0   // 0 = no expiry
+      }
+      const res = await fetch('/api/admin/update-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedClient.id, action: 'pays', value: JSON.stringify(cfg) })
+      })
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Failed to save package')
+      // update local view
+      const updated = { ...selectedClient, pays_enabled: true, pays_total_quota: cfg.total_quota, pays_daily_cap: cfg.daily_cap, pays_used_total: 0, pays_used_today: 0 }
+      setSelectedClient(updated)
+      setClients(prev => prev.map(c => c.id === selectedClient.id ? updated : c))
+      setPaysModal(false)
+      await fetchMasterDatabase()
+      alert('Pay-As-You-Send package activated.')
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setPaysSaving(false)
+    }
+  }
+
+  const handleDisablePays = async () => {
+    if (!selectedClient) return
+    if (!confirm(`Disable Pay-As-You-Send for ${selectedClient.email}?`)) return
+    setPaysSaving(true)
+    try {
+      const res = await fetch('/api/admin/update-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: selectedClient.id, action: 'pays', value: JSON.stringify({ enabled: false }) })
+      })
+      if (!res.ok) { const d = await res.json().catch(() => ({})); throw new Error(d?.error || 'Failed') }
+      const updated = { ...selectedClient, pays_enabled: false }
+      setSelectedClient(updated)
+      setClients(prev => prev.map(c => c.id === selectedClient.id ? updated : c))
+      await fetchMasterDatabase()
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setPaysSaving(false)
+    }
   }
 
   const handleSavePricing = async () => {
@@ -472,6 +544,35 @@ export default function SupportDesk() {
         .custom-scrollbar::-webkit-scrollbar-thumb { background: rgba(155, 93, 229, 0.2); border-radius: 10px; }
         .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: rgba(155, 93, 229, 0.5); }
       `}} />
+
+      {paysModal && selectedClient && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
+          <div className="w-full max-w-md bg-[#070512] border border-[#f59e0b]/20 rounded-2xl p-6 sm:p-8 shadow-[0_0_100px_rgba(245,158,11,0.15)] animate-[fadeUp_0.2s_ease-out]">
+            <h3 className="font-['Syne',sans-serif] text-xl font-bold mb-2 text-white">Pay-As-You-Send Package</h3>
+            <p className="text-xs text-[#8a80a0] mb-6">Grant <span className="text-white">{selectedClient.email}</span> a fixed number of emails. No balance or subscription required. Saving resets their usage counter.</p>
+
+            <div className="space-y-4 mb-6">
+              <div>
+                <label className="text-[10px] text-[#f59e0b] uppercase tracking-widest mb-2 block font-bold">Total Email Quota</label>
+                <input type="number" value={paysQuota} onChange={(e) => setPaysQuota(e.target.value)} placeholder="e.g. 50000" className="w-full bg-[#020106] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#f59e0b] transition-all font-mono text-sm" autoFocus />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#9b5de5] uppercase tracking-widest mb-2 block font-bold">Daily Cap (max per day)</label>
+                <input type="number" value={paysDaily} onChange={(e) => setPaysDaily(e.target.value)} placeholder="e.g. 2000" className="w-full bg-[#020106] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#9b5de5] transition-all font-mono text-sm" />
+              </div>
+              <div>
+                <label className="text-[10px] text-[#10b981] uppercase tracking-widest mb-2 block font-bold">Duration in Days <span className="text-[#8a80a0] normal-case tracking-normal">(leave blank = no expiry)</span></label>
+                <input type="number" value={paysDays} onChange={(e) => setPaysDays(e.target.value)} placeholder="e.g. 30 (optional)" className="w-full bg-[#020106] border border-white/[0.08] rounded-xl px-4 py-3 text-white focus:outline-none focus:border-[#10b981] transition-all font-mono text-sm" />
+              </div>
+            </div>
+
+            <div className="flex gap-3 justify-end">
+              <button type="button" onClick={() => setPaysModal(false)} className="px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest text-[#8a80a0] hover:text-white transition-colors">Cancel</button>
+              <button onClick={handleSavePays} disabled={paysSaving || !paysQuota} className="px-6 py-2.5 rounded-xl text-xs font-bold uppercase tracking-widest bg-[#f59e0b] text-black hover:bg-[#e08e00] transition-all disabled:opacity-50 shadow-[0_0_20px_rgba(245,158,11,0.3)]">{paysSaving ? 'Saving...' : 'Activate Package'}</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {modal.isOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-4">
@@ -816,6 +917,34 @@ export default function SupportDesk() {
                         <div className="text-2xl sm:text-3xl font-black text-white font-mono tracking-tighter drop-shadow-[0_0_20px_rgba(59,130,246,0.3)] capitalize">{selectedClient.active_plan_id || 'No Plan'}</div>
                       </div>
                       <button onClick={() => openOverrideModal('plan')} disabled={isActionLoading} className="w-full py-4 bg-[#3b82f6]/10 text-[#3b82f6] border border-[#3b82f6]/30 rounded-xl text-[10px] font-extrabold uppercase tracking-[0.2em] hover:bg-[#3b82f6] hover:text-white transition-all disabled:opacity-50">Modify Tier Access</button>
+                    </div>
+
+                    <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-6 sm:p-8 backdrop-blur-md relative overflow-hidden group lg:col-span-2">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-[#f59e0b]/10 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-700"></div>
+                      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 mb-6">
+                        <h3 className="font-['Syne',sans-serif] text-sm font-bold text-[#f59e0b] uppercase tracking-[0.2em]">Pay-As-You-Send Package</h3>
+                        <span className={`text-[10px] font-bold uppercase tracking-widest px-3 py-1.5 rounded-lg border ${selectedClient.pays_enabled ? 'text-[#10b981] bg-[#10b981]/10 border-[#10b981]/30' : 'text-[#8a80a0] bg-white/5 border-white/10'}`}>
+                          {selectedClient.pays_enabled ? '● Active' : 'Inactive'}
+                        </span>
+                      </div>
+                      {selectedClient.pays_enabled ? (
+                        <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
+                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Total Quota</div><div className="text-lg font-black text-white font-mono">{(selectedClient.pays_total_quota || 0).toLocaleString()}</div></div>
+                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Used Total</div><div className="text-lg font-black text-[#f59e0b] font-mono">{(selectedClient.pays_used_total || 0).toLocaleString()}</div></div>
+                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Daily Cap</div><div className="text-lg font-black text-white font-mono">{(selectedClient.pays_daily_cap || 0).toLocaleString()}</div></div>
+                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Remaining</div><div className="text-lg font-black text-[#10b981] font-mono">{Math.max(0, (selectedClient.pays_total_quota || 0) - (selectedClient.pays_used_total || 0)).toLocaleString()}</div></div>
+                        </div>
+                      ) : (
+                        <p className="text-[#8a80a0] text-sm mb-6">No email package set. Activate to grant this client a fixed number of emails (with an optional daily cap and expiry) — no balance or subscription needed.</p>
+                      )}
+                      <div className="flex flex-wrap gap-3">
+                        <button onClick={openPaysModal} className="px-6 py-3 bg-[#f59e0b]/10 text-[#f59e0b] border border-[#f59e0b]/30 rounded-xl text-[10px] font-extrabold uppercase tracking-[0.2em] hover:bg-[#f59e0b] hover:text-black transition-all">
+                          {selectedClient.pays_enabled ? 'Top Up / Edit Package' : 'Activate Package'}
+                        </button>
+                        {selectedClient.pays_enabled && (
+                          <button onClick={handleDisablePays} disabled={paysSaving} className="px-6 py-3 bg-white/5 text-[#8a80a0] border border-white/10 rounded-xl text-[10px] font-extrabold uppercase tracking-[0.2em] hover:text-red-400 hover:border-red-500/30 transition-all disabled:opacity-50">Disable</button>
+                        )}
+                      </div>
                     </div>
 
                     <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-6 sm:p-8 backdrop-blur-md relative overflow-hidden group lg:col-span-2">
