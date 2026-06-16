@@ -88,6 +88,8 @@ export default function SupportDesk() {
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
   const [deletingId, setDeletingId] = useState<string | null>(null)
+  const [selectMode, setSelectMode] = useState(false)
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [txnSearch, setTxnSearch] = useState('')
 
   const [modal, setModal] = useState<ModalState>({
@@ -245,6 +247,36 @@ export default function SupportDesk() {
     }
   }
 
+  const toggleSelect = (id: string) => {
+    setSelectedIds(prev => prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id])
+  }
+
+  const handleBulkDelete = async () => {
+    if (selectedIds.length === 0) return
+    const emails = clients.filter(c => selectedIds.includes(c.id)).map(c => c.email)
+    if (!confirm(`PERMANENTLY DELETE ${selectedIds.length} client(s)?\n\n${emails.join('\n')}\n\nThis wipes their accounts and all data. Cannot be undone.`)) return
+    if (!confirm(`Final confirm: fully remove these ${selectedIds.length} account(s)?`)) return
+    setDeletingId('bulk')
+    const failed: string[] = []
+    for (const id of selectedIds) {
+      try {
+        const res = await fetch('/api/admin/update-client', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: id, action: 'delete' })
+        })
+        if (!res.ok) { const d = await res.json().catch(() => ({})); failed.push(d?.error || id) }
+      } catch { failed.push(id) }
+    }
+    const deleted = selectedIds.filter(id => !failed.includes(id))
+    setClients(prev => prev.filter(c => !deleted.includes(c.id)))
+    setFilteredClients(prev => prev.filter(c => !deleted.includes(c.id)))
+    if (selectedClient && deleted.includes(selectedClient.id)) { setSelectedClient(null); setActiveTab('global') }
+    setSelectedIds([]); setSelectMode(false); setDeletingId(null)
+    await fetchMasterDatabase()
+    alert(failed.length ? `Deleted ${deleted.length}. ${failed.length} failed.` : `Deleted ${deleted.length} client(s).`)
+  }
+
   const handleSavePricing = async () => {
     setIsPricingSaving(true)
     try {
@@ -253,10 +285,13 @@ export default function SupportDesk() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ updates: systemPricing })
       })
-      if (!res.ok) throw new Error("Failed to sync new pricing to database. Ensure /api/admin/system-pricing/route.ts exists.")
-      alert("Global System Pricing Successfully Updated!")
+      const data = await res.json().catch(() => ({}))
+      if (!res.ok) throw new Error(data?.error || 'Save failed — check that you are logged in as admin.')
+      // re-fetch from the database so you can SEE it actually persisted
+      await fetchSystemPricing()
+      alert(`Saved ${data?.saved ?? systemPricing.length} plan(s) to the live database.`)
     } catch (error: any) {
-      alert(`Error: ${error.message}`)
+      alert(`Could not save pricing:\n\n${error.message}`)
     } finally {
       setIsPricingSaving(false)
     }
@@ -475,7 +510,12 @@ export default function SupportDesk() {
               {isLoggingOut ? '...' : 'Log Out'}
             </button>
           </div>
-          <p className="text-[#8a80a0] text-[10px] font-bold uppercase tracking-[0.2em] mt-2 mb-5">Active Network: <span className="text-white">{clients.length} Nodes</span></p>
+          <div className="flex items-center justify-between mt-2 mb-5">
+            <p className="text-[#8a80a0] text-[10px] font-bold uppercase tracking-[0.2em]">Active Network: <span className="text-white">{clients.length} Nodes</span></p>
+            <button onClick={() => { setSelectMode(m => !m); setSelectedIds([]) }} className={`text-[9px] font-bold uppercase tracking-[0.15em] px-3 py-1.5 rounded-lg border transition-all ${selectMode ? 'bg-[#9b5de5]/20 border-[#9b5de5]/50 text-[#9b5de5]' : 'bg-white/[0.03] border-white/[0.1] text-[#8a80a0] hover:text-white'}`}>
+              {selectMode ? 'Done' : 'Select'}
+            </button>
+          </div>
 
           <button onClick={() => { setActiveTab('global'); setSelectedClient(null); }} className={`w-full py-3 rounded-xl border font-bold text-xs uppercase tracking-widest transition-all ${activeTab === 'global' ? 'bg-[#9b5de5]/20 border-[#9b5de5]/50 text-[#9b5de5]' : 'bg-white/5 border-white/10 text-[#8a80a0] hover:text-white'}`}>
             Global · Pricing & Transactions
@@ -488,13 +528,30 @@ export default function SupportDesk() {
           </div>
         </div>
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 custom-scrollbar max-h-[50vh] md:max-h-none">
+          {/* multi-select toolbar */}
+          {selectMode && (
+            <div className="sticky top-0 z-10 -mt-1 mb-2 flex items-center justify-between gap-2 bg-[#070512] border border-[#9b5de5]/30 rounded-xl p-2.5">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-[#9b5de5] pl-1">{selectedIds.length} selected</span>
+              <div className="flex gap-2">
+                <button onClick={handleBulkDelete} disabled={selectedIds.length === 0 || deletingId === 'bulk'} className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest bg-red-500/15 text-red-400 border border-red-500/30 hover:bg-red-500 hover:text-white transition-all disabled:opacity-40">
+                  {deletingId === 'bulk' ? '...' : `Delete (${selectedIds.length})`}
+                </button>
+                <button onClick={() => { setSelectMode(false); setSelectedIds([]) }} className="px-3 py-1.5 rounded-lg text-[9px] font-bold uppercase tracking-widest bg-white/5 text-[#8a80a0] border border-white/10 hover:text-white transition-all">Cancel</button>
+              </div>
+            </div>
+          )}
           {filteredClients.length === 0 ? (
             <div className="text-center text-[#8a80a0] text-xs font-mono mt-10">No matching identifiers found.</div>
           ) : (
             filteredClients.map(client => (
-              <div key={client.id} onClick={() => { setSelectedClient(client); setActiveTab('settings'); }} className={`p-4 rounded-xl cursor-pointer transition-all border group ${selectedClient?.id === client.id && activeTab !== 'global' ? 'bg-[#9b5de5]/10 border-[#9b5de5]/50 shadow-[inset_0_0_20px_rgba(155,93,229,0.1)]' : 'bg-white/[0.02] border-transparent hover:bg-white/[0.05]'}`}>
-                <div className={`font-bold text-sm truncate transition-colors ${selectedClient?.id === client.id && activeTab !== 'global' ? 'text-white' : 'text-[#8a80a0] group-hover:text-white'}`}>{client.email}</div>
+              <div key={client.id} onClick={() => { if (selectMode) { toggleSelect(client.id) } else { setSelectedClient(client); setActiveTab('settings') } }} className={`p-4 rounded-xl cursor-pointer transition-all border group ${selectMode && selectedIds.includes(client.id) ? 'bg-red-500/10 border-red-500/40' : selectedClient?.id === client.id && activeTab !== 'global' ? 'bg-[#9b5de5]/10 border-[#9b5de5]/50 shadow-[inset_0_0_20px_rgba(155,93,229,0.1)]' : 'bg-white/[0.02] border-transparent hover:bg-white/[0.05]'}`}>
+                <div className="flex items-center gap-3">
+                  {selectMode && (
+                    <span className={`shrink-0 w-5 h-5 rounded-md border flex items-center justify-center text-[11px] font-bold ${selectedIds.includes(client.id) ? 'bg-red-500 border-red-500 text-white' : 'border-white/20 text-transparent'}`}>✓</span>
+                  )}
+                  <div className={`font-bold text-sm truncate transition-colors flex-1 ${selectedClient?.id === client.id && activeTab !== 'global' ? 'text-white' : 'text-[#8a80a0] group-hover:text-white'}`}>{client.email}</div>
+                </div>
                 <div className="flex justify-between items-center mt-3 text-xs">
                   <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-bold ${client.role === 'admin' ? 'bg-[#9b5de5]/20 text-[#9b5de5]' : 'bg-white/5 text-[#8a80a0]'}`}>{client.role}</span>
                   <span className="font-mono text-[#10b981] font-bold tracking-tight">{client.balance?.toFixed(2) || '0.00'} <span className="text-[10px] text-[#10b981]/50">USDT</span></span>

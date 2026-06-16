@@ -29,10 +29,29 @@ export async function POST(req: Request) {
 
     const { updates } = await req.json()
 
-    const { error } = await supabaseAdmin.from('system_pricing').upsert(updates)
+    if (!Array.isArray(updates) || updates.length === 0) {
+      return NextResponse.json({ error: 'No pricing rows were sent.' }, { status: 400 })
+    }
+
+    // Only send columns that exist on the table, and coerce numeric fields so a
+    // stray string can't make the upsert silently fail.
+    const clean = updates.map((u: any) => ({
+      id: u.id,
+      name: u.name,
+      price: Number(u.price) || 0,
+      email_limit: Number(u.email_limit) || 0,
+      overage_cost: Number(u.overage_cost) || 0,
+      features: Array.isArray(u.features) ? u.features : [],
+    }))
+
+    // Explicit conflict target on the primary key so existing rows update
+    // instead of erroring on a duplicate id.
+    const { error } = await supabaseAdmin
+      .from('system_pricing')
+      .upsert(clean, { onConflict: 'id' })
 
     if (error) throw error
-    return NextResponse.json({ success: true }, { status: 200 })
+    return NextResponse.json({ success: true, saved: clean.length }, { status: 200 })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })
   }
