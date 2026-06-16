@@ -79,8 +79,9 @@ function LiveTerminal() {
       .then(r => r.ok ? r.json() : null)
       .then(d => {
         if (!active || !d?.pricing?.length) return
-        // use the first plan's overage_cost as the representative rate
-        const rate = Number(d.pricing[0]?.overage_cost)
+        // Prefer a dedicated "ledger_rate" row the admin controls separately.
+        const ledgerRow = d.pricing.find((p: any) => p.id === 'ledger_rate')
+        const rate = Number(ledgerRow?.overage_cost ?? d.pricing[0]?.overage_cost)
         if (rate && rate > 0) { setCost(rate); costRef.current = rate }
       })
       .catch(() => {})

@@ -12,6 +12,8 @@ type ClientData = {
   balance: number
   active_plan_id: string | null
   plan_expires_at: string | null
+  emails_sent?: number
+  domains?: { id: string; domain_name: string; status: string; dns_records: any[] }[]
 }
 
 type DomainData = {
@@ -76,6 +78,8 @@ export default function SupportDesk() {
 
   const [systemPricing, setSystemPricing] = useState<PricingData[]>([])
   const [isPricingSaving, setIsPricingSaving] = useState(false)
+  const [ledgerRate, setLedgerRate] = useState<number>(0.0035)
+  const [isLedgerSaving, setIsLedgerSaving] = useState(false)
 
   // Transactions state
   const [transactions, setTransactions] = useState<TxnData[]>([])
@@ -83,6 +87,7 @@ export default function SupportDesk() {
   const [txnFilter, setTxnFilter] = useState<'all' | 'pending' | 'completed'>('all')
   const [approvingId, setApprovingId] = useState<string | null>(null)
   const [isLoggingOut, setIsLoggingOut] = useState(false)
+  const [deletingId, setDeletingId] = useState<string | null>(null)
   const [txnSearch, setTxnSearch] = useState('')
 
   const [modal, setModal] = useState<ModalState>({
@@ -145,9 +150,33 @@ export default function SupportDesk() {
       const res = await fetch('/api/admin/system-pricing')
       if (!res.ok) return
       const data = await res.json()
-      if (data.pricing) setSystemPricing(data.pricing)
+      if (data.pricing) {
+        // separate the dedicated ledger_rate row from the visible plans
+        const ledgerRow = data.pricing.find((p: PricingData) => p.id === 'ledger_rate')
+        if (ledgerRow) setLedgerRate(Number(ledgerRow.overage_cost) || 0.0035)
+        setSystemPricing(data.pricing.filter((p: PricingData) => p.id !== 'ledger_rate'))
+      }
     } catch (error) {
       console.error("Failed to load pricing data.", error)
+    }
+  }
+
+  const handleSaveLedgerRate = async () => {
+    setIsLedgerSaving(true)
+    try {
+      // store as a dedicated row so it never collides with real plans
+      const row = { id: 'ledger_rate', name: 'Ledger Display Rate', price: 0, email_limit: 0, overage_cost: ledgerRate, features: [] }
+      const res = await fetch('/api/admin/system-pricing', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ updates: [row] })
+      })
+      if (!res.ok) throw new Error('Failed to save ledger rate.')
+      alert('Ledger display rate saved. The homepage Ledger will now use this rate.')
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setIsLedgerSaving(false)
     }
   }
 
@@ -190,6 +219,30 @@ export default function SupportDesk() {
     setIsLoggingOut(true)
     try { await supabase.auth.signOut() } catch { /* ignore */ }
     router.replace('/login')
+  }
+
+  const handleDeleteClient = async (client: ClientData) => {
+    if (!confirm(`PERMANENTLY DELETE ${client.email}?\n\nThis wipes their account, login, domains, transactions and all data. This cannot be undone.`)) return
+    if (!confirm(`Are you absolutely sure? Type-check: this fully removes ${client.email} from the system.`)) return
+    setDeletingId(client.id)
+    try {
+      const res = await fetch('/api/admin/update-client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ userId: client.id, action: 'delete' })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Delete failed')
+      // remove locally + clear selection if it was this client
+      setClients(prev => prev.filter(c => c.id !== client.id))
+      setFilteredClients(prev => prev.filter(c => c.id !== client.id))
+      if (selectedClient?.id === client.id) { setSelectedClient(null); setActiveTab('global') }
+      alert(`${client.email} has been fully deleted.`)
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setDeletingId(null)
+    }
   }
 
   const handleSavePricing = async () => {
@@ -376,7 +429,7 @@ export default function SupportDesk() {
   }
 
   return (
-    <main className="min-h-screen md:h-screen bg-[#020106] text-white font-['DM_Sans',sans-serif] flex flex-col md:flex-row md:overflow-hidden selection:bg-[#9b5de5]/30">
+    <main className="min-h-screen bg-[#020106] text-white font-['DM_Sans',sans-serif] flex flex-col md:flex-row selection:bg-[#9b5de5]/30">
 
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -414,7 +467,7 @@ export default function SupportDesk() {
       )}
 
       {/* ── SIDEBAR (network list) ── */}
-      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col h-auto md:h-full min-h-0 z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
+      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col md:sticky md:top-0 md:h-screen z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
         <div className="p-5 sm:p-8 border-b border-white/[0.08] bg-black/40 shrink-0">
           <div className="flex justify-between items-start gap-3">
             <h1 className="font-['Syne',sans-serif] text-xl sm:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">SUPPORT HQ</h1>
@@ -446,6 +499,16 @@ export default function SupportDesk() {
                   <span className={`px-2 py-1 rounded text-[9px] uppercase tracking-widest font-bold ${client.role === 'admin' ? 'bg-[#9b5de5]/20 text-[#9b5de5]' : 'bg-white/5 text-[#8a80a0]'}`}>{client.role}</span>
                   <span className="font-mono text-[#10b981] font-bold tracking-tight">{client.balance?.toFixed(2) || '0.00'} <span className="text-[10px] text-[#10b981]/50">USDT</span></span>
                 </div>
+                {client.domains && client.domains.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 mt-2">
+                    {client.domains.slice(0, 3).map(d => (
+                      <span key={d.id} className={`text-[9px] font-mono px-2 py-0.5 rounded border ${d.status === 'active' || d.status === 'verified' ? 'text-[#10b981] bg-[#10b981]/10 border-[#10b981]/25' : 'text-orange-400 bg-orange-500/10 border-orange-500/25'}`} title={d.status}>
+                        {d.status === 'active' || d.status === 'verified' ? '✓' : '⏳'} {d.domain_name}
+                      </span>
+                    ))}
+                    {client.domains.length > 3 && <span className="text-[9px] font-mono text-[#8a80a0]">+{client.domains.length - 3}</span>}
+                  </div>
+                )}
               </div>
             ))
           )}
@@ -453,10 +516,10 @@ export default function SupportDesk() {
       </div>
 
       {/* ── MAIN PANEL ── */}
-      <div className="flex-1 flex flex-col min-h-0 md:overflow-hidden bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
+      <div className="flex-1 flex flex-col bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
 
         {activeTab === 'global' ? (
-          <div className="flex-1 overflow-y-auto p-5 sm:p-10 custom-scrollbar">
+          <div className="flex-1 p-5 sm:p-10 custom-scrollbar">
             <div className="max-w-5xl mx-auto">
 
               {/* Global sub-nav: Transactions | Pricing */}
@@ -565,6 +628,20 @@ export default function SupportDesk() {
                   </div>
 
                   <div className="space-y-6">
+                    {/* ── Dedicated Ledger Display Rate (controls the public Ledger animation) ── */}
+                    <div className="bg-black/60 border border-[#10b981]/20 p-6 sm:p-8 rounded-3xl shadow-[inset_0_0_20px_rgba(16,185,129,0.04)]">
+                      <div className="flex flex-col sm:flex-row sm:items-end gap-4 sm:gap-8">
+                        <div className="flex-1">
+                          <label className="text-[10px] text-[#10b981] uppercase tracking-widest mb-2 block font-bold">Ledger Display Rate (USDT / email)</label>
+                          <p className="text-[11px] text-[#8a80a0] mb-3">This is the per-email rate shown in the public homepage Ledger animation. It is separate from your plan overage rates.</p>
+                          <input type="number" step="0.0001" value={ledgerRate} onChange={(e) => setLedgerRate(Number(e.target.value))} className="w-full sm:max-w-xs bg-[#10b981]/10 border border-[#10b981]/30 text-[#10b981] p-4 rounded-xl font-mono font-bold outline-none focus:border-[#10b981]" />
+                        </div>
+                        <button onClick={handleSaveLedgerRate} disabled={isLedgerSaving} className="shrink-0 px-6 py-4 bg-[#10b981]/15 text-[#10b981] border border-[#10b981]/35 font-extrabold uppercase tracking-widest text-[11px] rounded-xl hover:bg-[#10b981] hover:text-black transition-all disabled:opacity-50">
+                          {isLedgerSaving ? 'Saving...' : 'Save Ledger Rate'}
+                        </button>
+                      </div>
+                    </div>
+
                     {systemPricing.length === 0 ? (
                       <div className="bg-black/60 border border-white/[0.08] p-8 sm:p-12 rounded-3xl flex flex-col items-center justify-center text-center shadow-[inset_0_0_20px_rgba(255,255,255,0.02)]">
                         <h3 className="text-xl font-bold text-white mb-2">Pricing Database Empty</h3>
@@ -614,12 +691,15 @@ export default function SupportDesk() {
                 <div className="flex bg-white/[0.02] p-1 rounded-xl border border-white/[0.05] shrink-0">
                   <button onClick={() => setActiveTab('chat')} className={`px-5 sm:px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all ${activeTab === 'chat' ? 'bg-gradient-to-r from-[#9b5de5] to-[#6c3b9c] text-white shadow-[0_0_20px_rgba(155,93,229,0.3)]' : 'text-[#8a80a0] hover:text-white hover:bg-white/[0.02]'}`}>Live Chat</button>
                   <button onClick={() => setActiveTab('settings')} className={`px-5 sm:px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all ${activeTab === 'settings' ? 'bg-[#10b981] text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-[#8a80a0] hover:text-white hover:bg-white/[0.02]'}`}>Inspection</button>
+                  <button onClick={() => handleDeleteClient(selectedClient)} disabled={deletingId === selectedClient.id} className="px-5 sm:px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all text-[#8a80a0] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+                    {deletingId === selectedClient.id ? '...' : 'Delete'}
+                  </button>
                 </div>
               </div>
             </div>
 
             {activeTab === 'chat' && (
-              <div className="flex-1 flex flex-col min-h-0 animate-[fadeIn_0.3s_ease-out]">
+              <div className="flex flex-col animate-[fadeIn_0.3s_ease-out]" style={{ height: 'min(70vh, 640px)' }}>
                 <div className="flex-1 overflow-y-auto p-5 sm:p-8 space-y-6 custom-scrollbar">
                   {messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-[#8a80a0] opacity-50">
@@ -658,7 +738,7 @@ export default function SupportDesk() {
             )}
 
             {activeTab === 'settings' && (
-              <div className="flex-1 overflow-y-auto p-5 sm:p-10 animate-[fadeIn_0.3s_ease-out] custom-scrollbar">
+              <div className="flex-1 p-5 sm:p-10 animate-[fadeIn_0.3s_ease-out] custom-scrollbar">
                 <div className="max-w-5xl mx-auto space-y-8 pb-20">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
                     <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-6 sm:p-8 backdrop-blur-md relative overflow-hidden group">

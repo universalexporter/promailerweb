@@ -71,6 +71,24 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true }, { status: 200 })
     }
 
+    // 4. FULL DELETE — wipes the user from Supabase Auth AND their data.
+    // Deleting the auth user is the key step; related rows are best-effort
+    // cleaned first so nothing is orphaned.
+    if (action === 'delete') {
+      // best-effort cleanup of related data (ignore individual failures)
+      const tables = ['transactions', 'wallets', 'client_domains', 'support_messages', 'support_tickets', 'campaigns', 'contacts', 'contact_lists']
+      for (const tbl of tables) {
+        const col = (tbl === 'wallets') ? 'user_id' : 'user_id'
+        try { await supabaseAdmin.from(tbl).delete().eq(col, userId) } catch { /* ignore */ }
+      }
+      // profile row
+      try { await supabaseAdmin.from('profiles').delete().eq('id', userId) } catch { /* ignore */ }
+      // finally the auth user itself
+      const { error } = await supabaseAdmin.auth.admin.deleteUser(userId)
+      if (error) throw error
+      return NextResponse.json({ success: true, deleted: true }, { status: 200 })
+    }
+
     // Fallback Rejection
     return NextResponse.json({ error: `Invalid action: ${action}` }, { status: 400 })
 

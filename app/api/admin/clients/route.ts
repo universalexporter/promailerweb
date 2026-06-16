@@ -20,10 +20,12 @@ export async function GET(req: Request) {
 
     const { data: profiles } = await supabaseAdmin.from('profiles').select('*')
     const { data: wallets } = await supabaseAdmin.from('wallets').select('*')
+    const { data: domains } = await supabaseAdmin.from('client_domains').select('*')
 
     const masterList = authData.users.map(user => {
       const profile = profiles?.find(p => p.id === user.id) || {}
       const wallet = wallets?.find(w => w.user_id === user.id) || { balance: 0 }
+      const userDomains = (domains || []).filter(d => d.user_id === user.id)
 
       return {
         id: user.id,
@@ -33,7 +35,13 @@ export async function GET(req: Request) {
         balance: wallet.balance || 0,
         active_plan_id: profile.active_plan_id || null,
         plan_expires_at: profile.plan_expires_at || null,
-        emails_sent: profile.emails_sent || 0
+        emails_sent: profile.emails_sent || 0,
+        domains: userDomains.map(d => ({
+          id: d.id,
+          domain_name: d.domain_name,
+          status: d.status,
+          dns_records: d.dns_records || []
+        }))
       }
     })
 
