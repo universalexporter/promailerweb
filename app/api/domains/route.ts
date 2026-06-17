@@ -1,5 +1,7 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { cookies } from 'next/headers'
+import { createServerClient } from '@supabase/ssr'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -9,22 +11,39 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { apiKey, domainName, userId } = body
+    const { domainName } = body
 
-    if (!apiKey || !domainName || !userId) {
-      return NextResponse.json({ error: 'Missing API Key, Domain Name, or User ID' }, { status: 400 })
+    if (!domainName) {
+      return NextResponse.json({ error: 'Missing domain name.' }, { status: 400 })
     }
 
-    // 1. Authenticate the Client
-    const { data: profile, error: profileError } = await supabaseAdmin
-      .from('profiles')
-      .select('id')
-      .eq('api_key', apiKey)
-      .single()
+    // 1. Authenticate via the logged-in session (secure) — no client-passed key.
+    //    This is what fixes the "Unauthorized. Please log in again" error: we no
+    //    longer rely on a stale apiKey/userId from the browser; we trust the
+    //    signed Supabase session cookie instead.
+    const cookieStore = await cookies()
+    const supabase = createServerClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+      {
+        cookies: {
+          getAll() { return cookieStore.getAll() },
+          setAll(cookiesToSet) {
+            try {
+              cookiesToSet.forEach(({ name, value, options }) =>
+                cookieStore.set(name, value, options)
+              )
+            } catch { /* route handler context; safe to ignore */ }
+          },
+        },
+      }
+    )
 
-    if (profileError || !profile || profile.id !== userId) {
-      return NextResponse.json({ error: 'Invalid API Key or Identity mismatch' }, { status: 401 })
+    const { data: { user } } = await supabase.auth.getUser()
+    if (!user) {
+      return NextResponse.json({ error: 'Unauthorized: please sign in again.' }, { status: 401 })
     }
+    const userId = user.id
 
     // 2. Request new DNS identity from Resend
     const resendResponse = await fetch('https://api.resend.com/domains', {
@@ -33,19 +52,16 @@ export async function POST(req: Request) {
         'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
         'Content-Type': 'application/json'
       },
-      body: JSON.stringify({
-        name: domainName
-      })
+      body: JSON.stringify({ name: domainName })
     })
 
     const resendData = await resendResponse.json()
 
     if (!resendResponse.ok) {
       console.error('Resend Domain Error:', resendData)
-      return NextResponse.json({ error: 'Failed to register domain with Resend' }, { status: 502 })
+      return NextResponse.json({ error: resendData?.message || 'Failed to register domain with Resend' }, { status: 502 })
     }
 
-    // --- THIS IS THE FIX ---
     // 3. Inject the mandatory DMARC record into Resend's records array
     const completeRecords = [
       ...resendData.records,
@@ -58,15 +74,15 @@ export async function POST(req: Request) {
       }
     ]
 
-    // 4. Save the pending domain and the COMPLETE DNS records to your database
+    // 4. Save the pending domain + complete DNS records (admin client bypasses RLS)
     const { error: dbError } = await supabaseAdmin
       .from('client_domains')
       .insert({
-        user_id: profile.id,
+        user_id: userId,
         domain_name: domainName,
         resend_domain_id: resendData.id,
         status: 'pending',
-        dns_records: completeRecords // Saving the 4 records to Supabase here!
+        dns_records: completeRecords
       })
 
     if (dbError) {
