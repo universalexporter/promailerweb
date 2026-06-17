@@ -87,6 +87,7 @@ export default function DashboardPage() {
   // Notification sound — created lazily and guarded so a missing /tick.mp3
   // never throws a console error. We only attempt to load it on the client.
   const tickSoundRef = useRef<HTMLAudioElement | null>(null)
+  const [chatUnread, setChatUnread] = useState(0)
   const playTick = () => {
     try {
       if (typeof window === 'undefined') return
@@ -135,7 +136,7 @@ export default function DashboardPage() {
         if (pricingRes.pricing && pricingRes.pricing.length > 0) {
           // Exclude the hidden 'ledger_rate' row — that is only for the homepage
           // animation, never a real client plan.
-          setDynamicTiers(pricingRes.pricing.filter((p: any) => p.id !== 'ledger_rate'))
+          setDynamicTiers(pricingRes.pricing.filter((p: any) => p.id !== 'ledger_rate' && p.id !== 'test'))
         } else {
           console.warn('No pricing data found in global table.')
         }
@@ -268,7 +269,9 @@ export default function DashboardPage() {
         setChatMessages((prev) => [...prev, newMsg])
         if (newMsg.sender_id !== userId) {
           playTick()
-          if (!isChatOpen) setIsChatOpen(true)
+          // If the chat panel is closed, show a notification badge on the bubble
+          // (don't force it open — less intrusive, more polished).
+          setChatUnread((n) => (isChatOpen ? 0 : n + 1))
         }
       })
       .subscribe()
@@ -393,8 +396,8 @@ export default function DashboardPage() {
   const isOutOfFunds = isAccountActive && walletBalance <= 0 && !hasPlanEmailsLeft
 
   const isPlanExpired = preciseCountdown === 'EXPIRED'
-  // A client whose only active plan is Pay-As-You-Send (no real subscription).
-  const isPaysOnly = !!(pays && pays.enabled && !activePlanId)
+  // A client whose only active plan is the Test plan.
+  const isPaysOnly = !!((pays && pays.enabled) || activePlanId === 'test')
   const usagePercentage = currentPlanObj.email_limit > 0 ? Math.min(100, (emailsSent / currentPlanObj.email_limit) * 100) : 0
 
   // ─── 9. MAIN UI RENDER ────────────────────────────────────────────────────
@@ -861,12 +864,16 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <button onClick={() => setIsChatOpen(!isChatOpen)} className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-tr from-[#020106] to-[#1a0b2e] rounded-full flex items-center justify-center shadow-[0_10px_40px_rgba(0,0,0,0.9),0_0_25px_rgba(155,93,229,0.4)] hover:shadow-[0_0_50px_rgba(155,93,229,0.7)] hover:scale-105 transition-all duration-300 pointer-events-auto border border-white/10 group relative z-50 text-white">
+        <button onClick={() => { setIsChatOpen(!isChatOpen); setChatUnread(0) }} className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-tr from-[#020106] to-[#1a0b2e] rounded-full flex items-center justify-center shadow-[0_10px_40px_rgba(0,0,0,0.9),0_0_25px_rgba(155,93,229,0.4)] hover:shadow-[0_0_50px_rgba(155,93,229,0.7)] hover:scale-105 transition-all duration-300 pointer-events-auto border border-white/10 group relative z-50 text-white">
           <div className="absolute inset-0 rounded-full border border-[#9b5de5]/30 group-hover:border-[#9b5de5]/80 transition-colors duration-300"></div>
           {isChatOpen ? <Icons.Close /> : (
             <div className="relative">
               <Icons.ChatBubble />
-              <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#10b981] rounded-full border-2 border-[#020106] animate-pulse"></div>
+              {chatUnread > 0 ? (
+                <div className="absolute -top-2 -right-2 min-w-[18px] h-[18px] px-1 bg-[#ef4444] rounded-full border-2 border-[#020106] flex items-center justify-center text-[10px] font-bold text-white animate-pulse shadow-[0_0_10px_rgba(239,68,68,0.6)]">{chatUnread}</div>
+              ) : (
+                <div className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-[#10b981] rounded-full border-2 border-[#020106] animate-pulse"></div>
+              )}
             </div>
           )}
         </button>

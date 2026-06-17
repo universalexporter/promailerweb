@@ -108,11 +108,19 @@ export async function POST(req: Request) {
           pays_used_today: 0,
           pays_today_date: new Date().toISOString().slice(0, 10),
           pays_expires_at: expiresAt, // null = no expiry
-          active_plan_id: null,       // Test replaces any old subscription
-          plan_expires_at: null
+          active_plan_id: 'test',     // desktop app reads plan via active_plan_id
+          plan_expires_at: expiresAt,
+          emails_sent: 0              // reset usage counter the desktop reads
         })
         .eq('id', userId)
       if (error) throw error
+
+      // Mirror the quota into the shared 'test' pricing row so the desktop app —
+      // which looks up email_limit by active_plan_id — sees the correct allowance.
+      await supabaseAdmin
+        .from('system_pricing')
+        .upsert({ id: 'test', name: 'Test Plan', price: 0, email_limit: totalQuota, overage_cost: 0, features: [] })
+
       return NextResponse.json({ success: true, pays: 'enabled' }, { status: 200 })
     }
 

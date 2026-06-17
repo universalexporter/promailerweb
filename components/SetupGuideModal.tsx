@@ -128,7 +128,7 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
             <span style={{ fontFamily: 'Syne,sans-serif', fontSize: '10px', fontWeight: 700, letterSpacing: '0.18em', textTransform: 'uppercase', color: '#8ef0c8' }}>Setup Guide</span>
           </div>
 
-          <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 'clamp(24px,4vw,34px)', letterSpacing: '-0.03em', color: '#fff', margin: 0, lineHeight: 1.1 }}>
+          <h2 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 800, fontSize: 'clamp(20px,3.5vw,28px)', letterSpacing: '-0.03em', color: '#fff', margin: 0, lineHeight: 1.1 }}>
             From Zero to <span style={{ background: 'linear-gradient(120deg,#10b981,#9b5de5)', WebkitBackgroundClip: 'text', backgroundClip: 'text', WebkitTextFillColor: 'transparent' }}>First Send</span>
           </h2>
           <p style={{ fontFamily: 'DM Sans,sans-serif', fontSize: '13.5px', color: '#9888ad', marginTop: '8px', marginBottom: 0 }}>
@@ -156,8 +156,8 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
 
                 {/* text */}
                 <div style={{ paddingTop: '2px', flex: 1 }}>
-                  <h3 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: '16px', color: '#fff', margin: '0 0 6px' }}>{s.title}</h3>
-                  <p style={{ fontFamily: 'DM Sans,sans-serif', fontSize: '13.5px', lineHeight: 1.65, color: '#9888ad', margin: 0 }}>{s.body}</p>
+                  <h3 style={{ fontFamily: 'Syne,sans-serif', fontWeight: 700, fontSize: '14px', color: '#fff', margin: '0 0 6px' }}>{s.title}</h3>
+                  <p style={{ fontFamily: 'DM Sans,sans-serif', fontSize: '12.5px', lineHeight: 1.6, color: '#9888ad', margin: 0 }}>{s.body}</p>
                   {s.tip && (
                     <div style={{ marginTop: '10px', display: 'flex', gap: '8px', alignItems: 'flex-start', padding: '9px 12px', borderRadius: '10px', background: 'rgba(16,185,129,0.07)', border: '1px solid rgba(16,185,129,0.2)' }}>
                       <span style={{ flexShrink: 0, fontSize: '12px', marginTop: '1px' }}>💡</span>

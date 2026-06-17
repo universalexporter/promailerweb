@@ -203,15 +203,16 @@ export async function POST(req: Request) {
 
     // 8. Accounting
     if (paysCountAfterSend) {
-      // PAYS: increment total + today counters, and stamp today's date so the
-      // daily counter resets correctly on the next calendar day.
+      // PAYS/Test: increment package counters AND emails_sent (the desktop app
+      // reads emails_sent vs the 'test' row's email_limit to show remaining).
       const today = new Date().toISOString().slice(0, 10)
       await supabaseAdmin
         .from('profiles')
         .update({
           pays_used_total: (Number(profile.pays_used_total) || 0) + 1,
           pays_used_today: paysNewUsedToday,
-          pays_today_date: today
+          pays_today_date: today,
+          emails_sent: (Number(profile.emails_sent) || 0) + 1
         })
         .eq('id', userId)
     } else if (isOverage && walletData) {
