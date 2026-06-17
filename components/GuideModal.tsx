@@ -202,7 +202,7 @@ export default function GuideModal({ onClose }: GuideModalProps) {
   const prevSlide = () => setCurrentSlide((prev) => Math.max(prev - 1, 0))
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-[fadeIn_0.3s_ease-out]">
+    <div data-lenis-prevent className="fixed inset-0 z-50 flex items-center justify-center p-4 sm:p-6 bg-black/80 backdrop-blur-md animate-[fadeIn_0.3s_ease-out]">
 
       <div className="relative w-full max-w-[650px] bg-[#070512] border border-white/[0.08] rounded-[2rem] shadow-[0_30px_100px_-20px_rgba(108,59,156,0.3)] overflow-hidden flex flex-col">
 

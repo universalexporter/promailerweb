@@ -74,6 +74,7 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
   return (
     <div
       onClick={onClose}
+      data-lenis-prevent
       style={{
         position: 'fixed', inset: 0, zIndex: 2147483646,
         display: 'block',

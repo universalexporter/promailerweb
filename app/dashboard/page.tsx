@@ -167,9 +167,9 @@ export default function DashboardPage() {
             setIsAccountActive(true)
             if (dbExpires) setExpiresAtDate(new Date(dbExpires))
           } else if (bal > 0 && !hasPays) {
-            // No subscription but has wallet funds → active pay-as-you-go account.
-            // (Skip this for PAYS clients — PAYS is already their plan.)
-            setActivePlanId('starter')
+            // No subscription but has wallet funds → account can still send
+            // (pay-as-you-go), but DON'T claim a specific plan like "Starter".
+            // Leave activePlanId null so the UI shows the plan picker, not a fake plan.
             setIsAccountActive(true)
           }
         }

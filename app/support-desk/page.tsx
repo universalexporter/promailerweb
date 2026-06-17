@@ -714,7 +714,7 @@ export default function SupportDesk() {
           </div>
         </div>
 
-        <div className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 custom-scrollbar max-h-[50vh] md:max-h-none">
+        <div data-lenis-prevent className="flex-1 min-h-0 overflow-y-auto p-4 space-y-2 custom-scrollbar max-h-[50vh] md:max-h-none">
           {/* multi-select toolbar */}
           {selectMode && (
             <div className="sticky top-0 z-10 -mt-1 mb-2 flex items-center justify-between gap-2 bg-[#070512] border border-[#9b5de5]/30 rounded-xl p-2.5">
@@ -948,7 +948,7 @@ export default function SupportDesk() {
 
             {activeTab === 'chat' && (
               <div className="flex flex-col min-h-0 animate-[fadeIn_0.3s_ease-out]" style={{ height: 'min(70vh, 640px)' }}>
-                <div className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-8 space-y-6 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
+                <div data-lenis-prevent className="flex-1 min-h-0 overflow-y-auto overscroll-contain p-5 sm:p-8 space-y-6 custom-scrollbar" style={{ WebkitOverflowScrolling: 'touch' }}>
                   {messages.length === 0 ? (
                     <div className="h-full flex flex-col items-center justify-center text-[#8a80a0] opacity-50">
                       <span className="text-sm font-mono uppercase tracking-widest text-center">Comm-Link Established. Awaiting Input.</span>
@@ -977,7 +977,7 @@ export default function SupportDesk() {
                 </div>
                 {/* ── READY MESSAGES PANEL ── */}
                 {cannedOpen && (
-                  <div className="shrink-0 border-t border-white/[0.08] bg-[#070512] max-h-[45vh] overflow-y-auto custom-scrollbar">
+                  <div data-lenis-prevent className="shrink-0 border-t border-white/[0.08] bg-[#070512] max-h-[45vh] overflow-y-auto custom-scrollbar">
                     <div className="sticky top-0 bg-[#070512] border-b border-white/[0.06] px-4 sm:px-6 py-3 flex items-center justify-between gap-3 z-10">
                       <span className="text-[11px] font-bold uppercase tracking-[0.15em] text-[#9b5de5]">Ready Messages</span>
                       <div className="flex gap-2">
