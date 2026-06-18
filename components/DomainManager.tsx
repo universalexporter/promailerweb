@@ -45,18 +45,22 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
     if (!domainInput || domains.length > 0) return
     setLoading(true)
     setError('')
-    
+
     try {
+      // Identify the user any way we can — a session if present, otherwise the
+      // apiKey prop. We DON'T hard-fail on a missing session here, because this
+      // component uses a non-cookie Supabase client that often can't see the
+      // session even when the user is fully logged in. The API route verifies
+      // identity by apiKey/session/userId, so it's safe to send what we have.
       const { data: { session } } = await supabase.auth.getSession()
-      if (!session) throw new Error("Unauthorized: Please log in again.")
 
       const response = await fetch('/api/domains', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ 
-          apiKey: apiKey, 
+        body: JSON.stringify({
+          apiKey: apiKey,
           domainName: domainInput.toLowerCase().trim(),
-          userId: session.user.id
+          userId: session?.user?.id || undefined
         })
       })
 
@@ -68,7 +72,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
 
       setDomainInput('')
       fetchDomains()
-      
+
     } catch (err: any) {
       setError(err.message)
     } finally {
@@ -84,17 +88,17 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ domainId: domainId })
         })
-        
+
         const data = await res.json()
         if (!res.ok) throw new Error(data.error || data.message)
-        
+
         // SMART SYNC: React to the status returned from the backend
         if (data.status === 'active' || data.status === 'verified') {
             setShowTutorial(false) // Hide tutorial if verified
         } else {
             setShowTutorial(true) // Show tutorial if still pending
         }
-        
+
         fetchDomains()
     } catch (err: any) {
         alert(`Verification Error: ${err.message}`)
@@ -117,11 +121,11 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
 
   return (
     <section className="bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 border border-white/[0.08] backdrop-blur-[50px] rounded-[2.5rem] p-8 sm:p-12 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.1)] relative overflow-hidden mt-10">
-      
+
       <div className="absolute -top-32 -left-32 w-96 h-96 bg-[#9b5de5]/10 blur-[100px] rounded-full pointer-events-none" />
 
       <div className="relative z-10 max-w-4xl">
-        
+
         <div className="flex justify-between items-start mb-8">
             <div>
                 <h2 className="font-['Syne',sans-serif] text-white font-extrabold text-2xl mb-2 tracking-tight">Sender Identity</h2>
@@ -130,7 +134,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                 </p>
             </div>
             {domains.length > 0 && (
-                <button 
+                <button
                     onClick={() => setShowTutorial(!showTutorial)}
                     className="flex items-center gap-2 px-4 py-2 bg-white/5 text-[#8a80a0] hover:text-white border border-white/10 rounded-lg text-xs font-bold transition-colors"
                 >
@@ -145,8 +149,8 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
             <div className="absolute inset-y-0 left-4 flex items-center pointer-events-none text-[#8a80a0]">
                 <Icons.Globe />
             </div>
-            <input 
-                type="text" 
+            <input
+                type="text"
                 placeholder={isDomainLocked ? "Domain Identity Locked" : "e.g. your-startup.com"}
                 value={domainInput}
                 onChange={(e) => setDomainInput(e.target.value)}
@@ -154,8 +158,8 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                 className={`w-full flex-1 bg-black/40 rounded-xl px-6 py-4 pl-12 text-white font-mono text-sm transition-all outline-none ${isDomainLocked ? 'border border-transparent opacity-50 cursor-not-allowed' : 'border border-white/[0.08] focus:border-[#9b5de5]/50 focus:ring-1 focus:ring-[#9b5de5]/50 shadow-[inset_0_2px_15px_rgba(0,0,0,0.6)]'}`}
             />
           </div>
-          
-          <button 
+
+          <button
             type="submit"
             disabled={loading || !domainInput || isDomainLocked}
             className={`relative group overflow-hidden rounded-xl p-[1px] disabled:opacity-50 disabled:cursor-not-allowed shrink-0 border ${isDomainLocked ? 'bg-white/5 border-transparent text-[#8a80a0]' : 'border-transparent'}`}
@@ -179,7 +183,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
         {/* DNS Records Display Section */}
         {domains.length > 0 && (
           <div className="animate-[fadeUp_0.5s_ease-out] space-y-6">
-            
+
             {domains.map((domain) => (
                 <div key={domain.id} className="border border-[#10b981]/30 rounded-2xl overflow-hidden bg-black/40 shadow-[0_0_30px_rgba(16,185,129,0.05)]">
                 <div className="bg-[#10b981]/10 p-6 border-b border-[#10b981]/20 flex flex-wrap justify-between items-center gap-4">
@@ -187,21 +191,21 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                         <h3 className="font-['Syne',sans-serif] font-bold text-[#10b981] text-lg mb-1">{domain.domain_name} Generated</h3>
                         <p className="text-xs text-[#10b981]/70 tracking-wide">Copy and paste these exact records into your domain registrar to verify ownership.</p>
                     </div>
-                    
+
                     <div className="flex items-center gap-4">
                         <span className={`px-4 py-1.5 rounded-lg text-[10px] uppercase font-bold tracking-widest border flex items-center gap-2 ${
-                            domain.status === 'active' || domain.status === 'verified' ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30' : 
+                            domain.status === 'active' || domain.status === 'verified' ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30' :
                             domain.status === 'pending_verification' || domain.status === 'pending' ? 'bg-orange-500/10 text-orange-400 border-orange-500/30' :
                             'bg-white/5 text-[#8a80a0] border-white/10'
                         }`}>
                             {(domain.status === 'pending_verification' || domain.status === 'pending') && <div className="w-1.5 h-1.5 bg-orange-400 rounded-full animate-pulse"></div>}
                             {domain.status === 'active' || domain.status === 'verified' ? 'Verified' : domain.status === 'pending_verification' || domain.status === 'pending' ? 'Checking DNS...' : 'Unverified'}
                         </span>
-                        
+
                         {domain.status !== 'active' && domain.status !== 'verified' && (
-                            <button 
+                            <button
                             onClick={() => handleVerify(domain.id)}
-                            disabled={verifyingId === domain.id} // <-- UNLOCKED BUTTON
+                            disabled={verifyingId === domain.id}
                             className="flex items-center gap-2 px-4 py-2 bg-[#9b5de5] text-white text-[10px] font-bold uppercase tracking-widest rounded-lg hover:bg-[#8040cd] transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(155,93,229,0.3)]"
                             >
                             {verifyingId === domain.id ? <><Icons.Refresh /> Pinging...</> : (domain.status === 'pending_verification' || domain.status === 'pending') ? 'Check Status' : 'Verify Records'}
@@ -209,7 +213,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                         )}
                     </div>
                 </div>
-                
+
                 <div className="overflow-x-auto">
                     <table className="w-full text-left text-sm">
                     <thead className="bg-black/60 border-b border-white/[0.04]">
@@ -259,7 +263,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
                     <h4 className="font-['Syne',sans-serif] text-white font-bold text-sm">How to verify your domain</h4>
                     <button onClick={() => setShowTutorial(false)} className="text-[#8a80a0] hover:text-white"><Icons.Close /></button>
                 </div>
-                
+
                 <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
                     <div>
                     <div className="flex items-center gap-2 mb-2">
