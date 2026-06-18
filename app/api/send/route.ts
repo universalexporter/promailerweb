@@ -10,13 +10,16 @@ const supabaseAdmin = createClient(
 const APP_URL = 'https://promailerweb.vercel.app'
 
 // Builds the signed, per-recipient unsubscribe link that /api/unsubscribe verifies.
-function buildUnsubUrl(email: string): string {
+// We also append the sending domain (&d=) so the unsubscribe page can tell the
+// recipient exactly which domain they're unsubscribing from.
+function buildUnsubUrl(email: string, sendingDomain?: string): string {
   const secret = process.env.UNSUB_SECRET || ''
   const sig = crypto.createHmac('sha256', secret).update(email).digest('hex').slice(0, 32)
   const enc = Buffer.from(email, 'utf8')
     .toString('base64')
     .replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '')
-  return `${APP_URL}/api/unsubscribe?u=${enc}.${sig}`
+  const d = sendingDomain ? `&d=${encodeURIComponent(sendingDomain)}` : ''
+  return `${APP_URL}/api/unsubscribe?u=${enc}.${sig}${d}`
 }
 
 export async function POST(req: Request) {
@@ -166,7 +169,7 @@ export async function POST(req: Request) {
     // 6b. Unsubscribe link: build this recipient's signed URL, fill the
     //     {{unsubscribe_url}} placeholder the desktop editor inserts, and make sure
     //     every email has a visible unsubscribe (Gmail/Yahoo require it for bulk).
-    const unsubUrl = buildUnsubUrl(to)
+    const unsubUrl = buildUnsubUrl(to, domainPart)
     let finalHtml = (html_body || '').split('{{unsubscribe_url}}').join(unsubUrl)
     if (!/unsubscribe/i.test(finalHtml)) {
       finalHtml +=

@@ -4,8 +4,9 @@
 //
 //  Handles the link recipients click in your emails. The link is built by
 //  /api/send as:
-//      https://promailerweb.vercel.app/api/unsubscribe?u=<token>
+//      https://promailerweb.vercel.app/api/unsubscribe?u=<token>&d=<sendingDomain>
 //  where <token> = base64url(email) + "." + HMAC_SHA256(UNSUB_SECRET, email)
+//  and  <d>      = the domain the email was sent from (shown on the page).
 //
 //  GET  -> shows a friendly confirmation page and unsubscribes (works for the
 //          link people click, and for Gmail/Yahoo "List-Unsubscribe" GET).
@@ -15,9 +16,6 @@
 //      UNSUB_SECRET                 a long random string (same value used by /api/send)
 //      NEXT_PUBLIC_SUPABASE_URL     (you already have this)
 //      SUPABASE_SERVICE_ROLE_KEY    (you already have this)
-//
-//  Supabase: this writes contacts.status = 'unsubscribed'. If you also keep a
-//  suppression table, the marked block below adds the email there too.
 // =============================================================================
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
@@ -52,21 +50,27 @@ function verifyToken(token: string): string | null {
   }
 }
 
+// Only allow a clean, safe domain string to be echoed back into the page.
+function safeDomain(raw: string | null): string {
+  if (!raw) return ''
+  const d = raw.trim().toLowerCase()
+  // valid domain characters only — blocks any HTML/script injection
+  if (!/^[a-z0-9.-]{1,253}$/.test(d)) return ''
+  return d
+}
+
 async function unsubscribe(email: string) {
-  // Mark the contact unsubscribed everywhere this email appears.
   await supabaseAdmin
     .from('contacts')
     .update({ status: 'unsubscribed' })
     .eq('email', email)
-
-  // OPTIONAL — if you keep a suppression table, also record it there:
-  // await supabaseAdmin
-  //   .from('suppression_list')
-  //   .upsert({ email, reason: 'unsubscribe' }, { onConflict: 'email' })
 }
 
-function page(message: string, ok: boolean): string {
+function page(message: string, ok: boolean, domain: string): string {
   const accent = ok ? '#10b981' : '#ef4444'
+  const brand = domain
+    ? `<div style="margin-bottom:18px;font-family:'Segoe UI',system-ui,sans-serif;font-size:13px;font-weight:800;letter-spacing:1px;text-transform:uppercase;color:#9b5de5;">${domain}</div>`
+    : ''
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Unsubscribe</title>
@@ -80,22 +84,24 @@ function page(message: string, ok: boolean): string {
   h1{font-size:21px;margin:0 0 10px;font-weight:800;}
   p{color:#a79fbb;font-size:14px;line-height:1.6;margin:0;}
 </style></head>
-<body><div class="card"><div class="dot">${ok ? '\u2713' : '!'}</div>
+<body><div class="card">${brand}<div class="dot">${ok ? '\u2713' : '!'}</div>
 <h1>${ok ? 'You\u2019re unsubscribed' : 'Link problem'}</h1><p>${message}</p></div></body></html>`
 }
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
   const token = url.searchParams.get('u') || ''
+  const domain = safeDomain(url.searchParams.get('d'))
   const email = verifyToken(token)
   if (!email) {
-    return new NextResponse(page('This unsubscribe link is invalid or has expired.', false), {
+    return new NextResponse(page('This unsubscribe link is invalid or has expired.', false, domain), {
       status: 400, headers: { 'Content-Type': 'text/html' },
     })
   }
   await unsubscribe(email)
+  const from = domain ? `emails from ${domain}` : 'this mailing list'
   return new NextResponse(
-    page(`${email} has been removed from this mailing list and won\u2019t receive further emails.`, true),
+    page(`${email} has been removed and won\u2019t receive further ${from}.`, true, domain),
     { status: 200, headers: { 'Content-Type': 'text/html' } }
   )
 }
