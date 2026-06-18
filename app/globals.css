@@ -19,6 +19,17 @@ body {
 
 * { cursor: none !important; }
 
+/* ── CUSTOM CURSOR MUST NEVER BLOCK CLICKS/HOVER ──
+   The custom-cursor elements follow the mouse across the whole screen. Without
+   pointer-events:none they sit ON TOP of everything (including modals) and
+   swallow every click and hover — which made the X un-clickable and hover
+   "disappear" on the guide and terms modals. This forces them to be visual
+   only, so the mouse passes straight through to the real UI underneath. */
+.cursor-dot, .cursor-ring, #cursor-dot, #cursor-ring,
+[class*="cursor-dot"], [class*="cursor-ring"], [class*="custom-cursor"] {
+  pointer-events: none !important;
+}
+
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: #04030a; }
 ::-webkit-scrollbar-thumb { background: #6c3b9c; border-radius: 2px; }
