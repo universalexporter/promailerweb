@@ -25,10 +25,36 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
   const [verifyingId, setVerifyingId] = useState<string | null>(null)
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null)
   const [showTutorial, setShowTutorial] = useState(false)
+  const [domainLimit, setDomainLimit] = useState(1)
+
+  // How many domains each plan may register.
+  const planDomainLimit = (planId: string | null): number => {
+    switch ((planId || '').toLowerCase()) {
+      case 'pro': return 3
+      case 'enterprise': return 10   // "Scale" plan id is 'enterprise'
+      case 'scale': return 10
+      case 'starter': return 1
+      case 'test': return 1
+      default: return 1
+    }
+  }
 
   useEffect(() => {
     fetchDomains()
+    fetchPlanLimit()
   }, [])
+
+  const fetchPlanLimit = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (!session) return
+      const { data } = await supabase.from('profiles')
+        .select('active_plan_id')
+        .eq('id', session.user.id)
+        .single()
+      if (data) setDomainLimit(planDomainLimit(data.active_plan_id))
+    } catch { /* keep default of 1 */ }
+  }
 
   const fetchDomains = async () => {
     const { data: { session } } = await supabase.auth.getSession()
@@ -42,7 +68,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
 
   const handleAddDomain = async (e?: React.FormEvent) => {
     if (e) e.preventDefault()
-    if (!domainInput || domains.length > 0) return
+    if (!domainInput || domains.length >= domainLimit) return
     setLoading(true)
     setError('')
 
@@ -117,7 +143,7 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
     }
   }
 
-  const isDomainLocked = domains.length > 0;
+  const isDomainLocked = domains.length >= domainLimit;
 
   return (
     <section className="bg-gradient-to-b from-[#0a0614]/80 to-[#04020a]/80 border border-white/[0.08] backdrop-blur-[50px] rounded-[2.5rem] p-8 sm:p-12 shadow-[0_0_0_1px_rgba(255,255,255,0.02),0_30px_80px_-20px_rgba(0,0,0,0.8),inset_0_1px_0_rgba(255,255,255,0.1)] relative overflow-hidden mt-10">
@@ -177,6 +203,15 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
           <div className="p-4 mb-8 bg-red-500/10 border border-red-500/30 text-red-400 text-sm rounded-xl flex items-center gap-3">
             <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
             {error}
+          </div>
+        )}
+
+        {!error && isDomainLocked && (
+          <div className="p-4 mb-8 bg-[#9b5de5]/[0.06] border border-[#9b5de5]/20 text-[#c8b0e0] text-sm rounded-xl flex items-center gap-3">
+            <span className="w-2 h-2 rounded-full bg-[#9b5de5]" />
+            {domainLimit === 1
+              ? 'Your plan includes 1 sending domain.'
+              : `You've used all ${domainLimit} sending domains included in your plan.`}
           </div>
         )}
 
