@@ -36,7 +36,10 @@ export default function LoginPage() {
     if (profile?.role === 'admin' || profile?.role === 'support') {
       router.replace('/support-desk')
     } else {
-      router.replace('/dashboard')
+      // If they came from the footer "Support" link, open the dashboard chat.
+      const wantsSupport = typeof window !== 'undefined' &&
+        new URLSearchParams(window.location.search).get('next') === 'support'
+      router.replace(wantsSupport ? '/dashboard?support=1' : '/dashboard')
     }
     router.refresh()
   }

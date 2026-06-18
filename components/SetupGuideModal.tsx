@@ -1,6 +1,7 @@
 'use client'
 
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 const STEPS = [
   {
@@ -62,8 +63,10 @@ const STEPS = [
 ]
 
 export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
+  const [mounted, setMounted] = useState(false)
   // Lock background scroll + close on Escape.
   useEffect(() => {
+    setMounted(true)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
@@ -71,7 +74,9 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
     return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey) }
   }, [onClose])
 
-  return (
+  if (!mounted) return null
+
+  return createPortal(
     <div
       onClick={onClose}
       data-lenis-prevent
@@ -198,6 +203,7 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
         .sg-card::-webkit-scrollbar-thumb { background: rgba(155,93,229,0.3); border-radius: 10px; }
         .sg-step:hover h3 { color: #c8b0e0; }
       `}</style>
-    </div>
+    </div>,
+    document.body
   )
 }

@@ -2,44 +2,127 @@
 
 import Link from 'next/link'
 import { useState } from 'react'
+import { useRouter } from 'next/navigation'
 import DownloadButton from '@/components/DownloadButton'
 import TermsModal from '@/components/TermsModal'
+import InfoModal from '@/components/InfoModal'
+import { supabase } from '@/lib/supabaseClient'
 
-const COLS = [
-  {
-    title: 'Product',
-    links: [
-      { label: 'Desktop App',    href: '#', download: true },
-      { label: 'Client Portal',  href: '/login' },
-      { label: 'Virtual Ledger', href: '#' },
-      { label: 'API Reference',  href: '#' },
-      { label: 'Changelog',      href: '#' },
-    ],
-  },
-  {
-    title: 'Security',
-    links: [
-      { label: 'AES-256 Vault',          href: '#' },
-      { label: 'Zero-Knowledge Policy',  href: '#' },
-      { label: 'Sub-Account Isolation',  href: '#' },
-      { label: 'Audit Logs',             href: '#' },
-      { label: 'Compliance',             href: '#' },
-    ],
-  },
-  {
-    title: 'Company',
-    links: [
-      { label: 'About',            href: '#' },
-      { label: 'Privacy Policy',   href: '#', terms: true },
-      { label: 'Terms of Service', href: '#', terms: true },
-      { label: 'Status Page',      href: '#' },
-      { label: 'Support',          href: '#' },
-    ],
-  },
-]
+// Content for each info modal (edit freely).
+const INFO: Record<string, { title: string; body: string[] }> = {
+  'Virtual Ledger': { title: 'Virtual Ledger', body: [
+    'The Virtual Ledger is your real-time record of sending activity and usage. Every email routed through ProMail is accounted for, so you always know exactly what you have sent and what remains.',
+    'Your ledger updates live as your campaigns run, giving you full transparency over your account.',
+  ]},
+  'API Reference': { title: 'API Reference', body: [
+    'ProMail exposes a simple sending API used by the desktop engine. Each request is authenticated with your private API key.',
+    'Full developer documentation is being prepared. For early access or integration questions, please contact support.',
+  ]},
+  'Changelog': { title: 'Changelog', body: [
+    'We ship improvements continuously — deliverability upgrades, dashboard refinements, and new controls.',
+    'A detailed public changelog is coming soon. Major updates are announced inside your dashboard.',
+  ]},
+  'AES-256 Vault': { title: 'AES-256 Vault', body: [
+    'Sensitive credentials are protected using AES-256 encryption, the same standard trusted by financial institutions.',
+    'Your keys and secrets are never stored in plain text.',
+  ]},
+  'Zero-Knowledge Policy': { title: 'Zero-Knowledge Policy', body: [
+    'Your contact lists live on your own device, not on our servers. ProMail is designed so that your audience data stays under your control.',
+    'We route your email without harvesting or reselling your contacts — your data is yours.',
+  ]},
+  'Sub-Account Isolation': { title: 'Sub-Account Isolation', body: [
+    'Each client account is isolated. Your domains, contacts, and sending activity are never shared with or visible to other accounts.',
+    'This isolation protects your data and your sending reputation.',
+  ]},
+  'Audit Logs': { title: 'Audit Logs', body: [
+    'Key account actions are logged so you have a clear trail of activity on your account.',
+    'Expanded self-serve audit log access is on our roadmap.',
+  ]},
+  'Compliance': { title: 'Compliance', body: [
+    'ProMail is built to support compliant sending. You remain responsible for obtaining consent and following anti-spam laws (such as CAN-SPAM, CASL, and GDPR) in your and your recipients\u2019 jurisdictions.',
+    'We provide the tools — including one-click unsubscribe and suppression — to help you stay compliant.',
+  ]},
+  'About': { title: 'About ProMail', body: [
+    'ProMail is a desktop-to-cloud bulk email platform built for operators who demand total control and privacy.',
+    'We combine offline-first data privacy with powerful cloud sending infrastructure and pay-as-you-send economics.',
+  ]},
+  'Status Page': { title: 'System Status', body: [
+    'All systems are currently operational.',
+    'A live, detailed status page is being prepared. If you experience an issue, please reach out through support.',
+  ]},
+}
 
 export default function Footer() {
+  const router = useRouter()
   const [showTerms, setShowTerms] = useState(false)
+  const [info, setInfo] = useState<{ title: string; body: string[] } | null>(null)
+
+  // Support → dashboard + open chat (login first if needed).
+  const handleSupport = async () => {
+    try {
+      const { data: { session } } = await supabase.auth.getSession()
+      if (session?.user) {
+        router.push('/dashboard?support=1')
+      } else {
+        router.push('/login?next=support')
+      }
+    } catch {
+      router.push('/login?next=support')
+    }
+  }
+
+  const COLS = [
+    {
+      title: 'Product',
+      links: [
+        { label: 'Desktop App',    download: true },
+        { label: 'Client Portal',  href: '/login' },
+        { label: 'Virtual Ledger', info: true },
+        { label: 'API Reference',  info: true },
+        { label: 'Changelog',      info: true },
+      ],
+    },
+    {
+      title: 'Security',
+      links: [
+        { label: 'AES-256 Vault',          info: true },
+        { label: 'Zero-Knowledge Policy',  info: true },
+        { label: 'Sub-Account Isolation',  info: true },
+        { label: 'Audit Logs',             info: true },
+        { label: 'Compliance',             info: true },
+      ],
+    },
+    {
+      title: 'Company',
+      links: [
+        { label: 'About',            info: true },
+        { label: 'Privacy Policy',   terms: true },
+        { label: 'Terms of Service', terms: true },
+        { label: 'Status Page',      info: true },
+        { label: 'Support',          support: true },
+      ],
+    },
+  ]
+
+  const renderLink = (lnk: any) => {
+    if (lnk.download) {
+      return (
+        <DownloadButton className="ft-col-a" align="left" style={{ background:'transparent', border:'none', padding:0, cursor:'pointer' }}>
+          {lnk.label}
+        </DownloadButton>
+      )
+    }
+    if (lnk.terms) {
+      return <button onClick={() => setShowTerms(true)} className="ft-col-a" style={{ background:'transparent', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>{lnk.label}</button>
+    }
+    if (lnk.support) {
+      return <button onClick={handleSupport} className="ft-col-a" style={{ background:'transparent', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>{lnk.label}</button>
+    }
+    if (lnk.info && INFO[lnk.label]) {
+      return <button onClick={() => setInfo(INFO[lnk.label])} className="ft-col-a" style={{ background:'transparent', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>{lnk.label}</button>
+    }
+    return <Link href={lnk.href || '#'} className="ft-col-a" style={{ textDecoration:'none' }}>{lnk.label}</Link>
+  }
 
   return (
     <footer
@@ -51,10 +134,8 @@ export default function Footer() {
       }}
     >
 
-      {/* ── MAIN GRID ── */}
       <div className="ft-main">
 
-        {/* Brand */}
         <div className="ft-brand">
           <Link href="/" className="ft-logo" style={{ textDecoration:'none' }}>
             <span style={{
@@ -72,35 +153,18 @@ export default function Footer() {
           </p>
           </div>
 
-        {/* Link columns */}
         {COLS.map(col => (
           <div key={col.title} className="ft-col">
             <h4 className="ft-col-h">{col.title}</h4>
             <ul className="ft-col-ul">
               {col.links.map((lnk) => (
-                <li key={lnk.label}>
-                  {('download' in lnk && lnk.download) ? (
-                    // Desktop App → opens the Windows/Mac chooser dropdown
-                    <DownloadButton className="ft-col-a" align="left"
-                      style={{ background:'transparent', border:'none', padding:0, cursor:'pointer' }}>
-                      {lnk.label}
-                    </DownloadButton>
-                  ) : ('terms' in lnk && lnk.terms) ? (
-                    // Terms / Privacy → open the Terms & Conditions modal
-                    <button onClick={() => setShowTerms(true)} className="ft-col-a" style={{ background:'transparent', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>
-                      {lnk.label}
-                    </button>
-                  ) : (
-                    <Link href={lnk.href} className="ft-col-a" style={{ textDecoration:'none' }}>{lnk.label}</Link>
-                  )}
-                </li>
+                <li key={lnk.label}>{renderLink(lnk)}</li>
               ))}
             </ul>
           </div>
         ))}
       </div>
 
-      {/* ── BOTTOM BAR ── */}
       <div className="ft-bottom">
         <p className="ft-copy">© {new Date().getFullYear()} ProMail Technologies. All rights reserved.</p>
 
@@ -118,8 +182,8 @@ export default function Footer() {
       </div>
 
       {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
+      {info && <InfoModal title={info.title} body={info.body} onClose={() => setInfo(null)} />}
 
-      {/* ── STYLES ── */}
       <style>{`
         .ft-main {
           max-width: 1240px; margin: 0 auto;
@@ -157,20 +221,17 @@ export default function Footer() {
         .ft-copy { font-family: 'DM Sans',sans-serif; font-size: clamp(10.5px,0.9vw,12px); color: rgba(122,112,144,0.4); margin: 0; }
         .ft-status { display: flex; align-items: center; gap: 7px; font-family: 'DM Sans',sans-serif; font-size: clamp(10.5px,0.9vw,12px); color: #10b981; }
 
-        /* tablet */
         @media (max-width: 900px) {
           .ft-main { grid-template-columns: 1fr 1fr; }
           .ft-brand { grid-column: 1 / -1; }
           .ft-tagline { max-width: 100%; }
           .ft-copy-right { display: none; }
         }
-        /* mobile */
         @media (max-width: 560px) {
           .ft-main { grid-template-columns: 1fr 1fr; padding: 36px 16px 24px; gap: 22px; }
           .ft-brand { grid-column: 1 / -1; }
           .ft-bottom { padding: 14px 16px; flex-direction: column; align-items: flex-start; gap: 8px; }
         }
-        /* very small */
         @media (max-width: 380px) {
           .ft-main { grid-template-columns: 1fr; padding: 32px 13px 20px; }
         }

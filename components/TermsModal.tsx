@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import { createPortal } from 'react-dom'
 
 interface TermsModalProps {
   onClose: () => void
@@ -173,8 +174,11 @@ const SECTIONS: { title: string; body: string[] }[] = [
 export default function TermsModal({ onClose, onAccept }: TermsModalProps) {
   const [page, setPage] = useState(0)
   const [showMenu, setShowMenu] = useState(false)
+  const [mounted, setMounted] = useState(false)
   const last = SECTIONS.length - 1
   const atEnd = page === last
+
+  useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
@@ -188,7 +192,9 @@ export default function TermsModal({ onClose, onAccept }: TermsModalProps) {
 
   const section = SECTIONS[page]
 
-  return (
+  if (!mounted) return null
+
+  return createPortal(
     <div
       onClick={onClose}
       data-lenis-prevent
@@ -275,6 +281,7 @@ export default function TermsModal({ onClose, onAccept }: TermsModalProps) {
           </div>
         </div>
       </div>
-    </div>
+    </div>,
+    document.body
   )
 }

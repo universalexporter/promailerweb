@@ -128,6 +128,16 @@ export default function DashboardPage() {
     }
   }, [])
 
+  // If the user arrived from the footer "Support" link (?support=1), open chat.
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    if (params.get('support') === '1') {
+      setIsChatOpen(true)
+      window.history.replaceState({}, '', '/dashboard')
+    }
+  }, [])
+
   // Safe sign-out + redirect, reused by the stale-session guard and the button.
   const forceLogout = async () => {
     try { await supabase.auth.signOut() } catch { /* ignore */ }
