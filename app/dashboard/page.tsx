@@ -847,7 +847,7 @@ export default function DashboardPage() {
               <p className="text-[10px] text-[#9b5de5] font-bold uppercase tracking-[0.15em] flex items-center justify-center gap-2"><Icons.Bolt />We typically reply in under 5 minutes.</p>
             </div>
 
-            <div className="flex-1 p-5 sm:p-6 overflow-y-auto space-y-5 sm:space-y-6 pro-scroll bg-black/40">
+            <div data-lenis-prevent className="flex-1 min-h-0 p-5 sm:p-6 overflow-y-auto overscroll-contain space-y-5 sm:space-y-6 pro-scroll bg-black/40" style={{ WebkitOverflowScrolling: 'touch' }}>
               {chatMessages.length === 0 ? (
                 <div className="h-full flex flex-col items-center justify-center text-center px-6 opacity-60">
                   <div className="w-16 h-16 bg-white/5 rounded-full flex items-center justify-center mb-4 text-[#8a80a0]"><Icons.ChatBubble /></div>

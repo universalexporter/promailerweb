@@ -11,18 +11,14 @@ export default function CustomCursor() {
   const raf   = useRef<number>(0)
 
   useEffect(() => {
-    // Track mouse instantly
     const onMove = (e: MouseEvent) => { mouse.current.x = e.clientX; mouse.current.y = e.clientY }
     document.addEventListener('mousemove', onMove)
 
-    // Smooth animation loop
     const tick = () => {
-      // Dot snaps immediately
       if (dotRef.current) {
         dotRef.current.style.left = `${mouse.current.x}px`
         dotRef.current.style.top  = `${mouse.current.y}px`
       }
-      // Ring follows with easing — THIS is what makes it feel smooth
       ring.current.x += (mouse.current.x - ring.current.x) * 0.10
       ring.current.y += (mouse.current.y - ring.current.y) * 0.10
       if (ringRef.current) {
@@ -33,8 +29,9 @@ export default function CustomCursor() {
     }
     raf.current = requestAnimationFrame(tick)
 
-    // Grow on interactive elements
-    const all = document.querySelectorAll('a, button, [data-hover]')
+    // Grow on interactive elements. Re-scan periodically so elements that mount
+    // later (modals, portals) also get the hover effect.
+    let tracked: Element[] = []
     const grow = () => {
       if (dotRef.current) { dotRef.current.style.width='16px'; dotRef.current.style.height='16px'; dotRef.current.style.background='#9b5de5' }
       if (ringRef.current) { ringRef.current.style.width='52px'; ringRef.current.style.height='52px'; ringRef.current.style.borderColor='rgba(155,93,229,0.75)' }
@@ -43,10 +40,14 @@ export default function CustomCursor() {
       if (dotRef.current) { dotRef.current.style.width='10px'; dotRef.current.style.height='10px'; dotRef.current.style.background='#9b5de5' }
       if (ringRef.current) { ringRef.current.style.width='38px'; ringRef.current.style.height='38px'; ringRef.current.style.borderColor='rgba(108,59,156,0.45)' }
     }
+    const bind = () => {
+      tracked.forEach(el => { el.removeEventListener('mouseenter', grow); el.removeEventListener('mouseleave', shrink) })
+      tracked = Array.from(document.querySelectorAll('a, button, [data-hover], input, textarea, select'))
+      tracked.forEach(el => { el.addEventListener('mouseenter', grow); el.addEventListener('mouseleave', shrink) })
+    }
+    bind()
+    const rebindTimer = setInterval(bind, 1500)
 
-    all.forEach(el => { el.addEventListener('mouseenter', grow); el.addEventListener('mouseleave', shrink) })
-
-    // Hide on leave
     const onLeave = () => { if (dotRef.current) dotRef.current.style.opacity='0'; if (ringRef.current) ringRef.current.style.opacity='0' }
     const onEnter = () => { if (dotRef.current) dotRef.current.style.opacity='1'; if (ringRef.current) ringRef.current.style.opacity='1' }
     document.addEventListener('mouseleave', onLeave)
@@ -57,16 +58,19 @@ export default function CustomCursor() {
       document.removeEventListener('mouseleave', onLeave)
       document.removeEventListener('mouseenter', onEnter)
       cancelAnimationFrame(raf.current)
-      all.forEach(el => { el.removeEventListener('mouseenter', grow); el.removeEventListener('mouseleave', shrink) })
+      clearInterval(rebindTimer)
+      tracked.forEach(el => { el.removeEventListener('mouseenter', grow); el.removeEventListener('mouseleave', shrink) })
     }
   }, [])
 
   return (
     <>
-      {/* Inner dot — snaps to cursor */}
+      {/* Inner dot — snaps to cursor. z-index sits ABOVE modals (2147483647)
+          so the cursor stays visible and on top everywhere, including over
+          open modals. pointerEvents:none means it never blocks clicks. */}
       <div ref={dotRef} style={{
         position:      'fixed',
-        zIndex:        9999,
+        zIndex:        2147483647,
         width:         '10px',
         height:        '10px',
         borderRadius:  '50%',
@@ -77,11 +81,12 @@ export default function CustomCursor() {
         mixBlendMode:  'screen',
         transition:    'width 0.15s ease, height 0.15s ease, background 0.15s ease',
         willChange:    'left, top',
+        top: 0, left: 0,
       }} />
       {/* Outer ring — lags behind */}
       <div ref={ringRef} style={{
         position:      'fixed',
-        zIndex:        9998,
+        zIndex:        2147483646,
         width:         '38px',
         height:        '38px',
         borderRadius:  '50%',
@@ -90,6 +95,7 @@ export default function CustomCursor() {
         transform:     'translate(-50%, -50%)',
         transition:    'width 0.2s ease, height 0.2s ease, border-color 0.2s ease',
         willChange:    'left, top',
+        top: 0, left: 0,
       }} />
     </>
   )
