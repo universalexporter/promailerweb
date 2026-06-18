@@ -2,8 +2,10 @@
 
 import { useState, useEffect } from 'react'
 import dynamic from 'next/dynamic'
+import Link from 'next/link'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import TermsModal from '@/components/TermsModal'
 
 const NeuralBrainScene = dynamic(() => import('@/components/3d/NeuralBrainScene'), { ssr: false })
 
@@ -18,12 +20,16 @@ export default function LoginPage() {
   const [companyName, setCompanyName] = useState('')
   const [mobilePhone, setMobilePhone] = useState('')
 
+  // Terms & Conditions acceptance
+  const [showTerms, setShowTerms] = useState(false)
+  const [acceptedTerms, setAcceptedTerms] = useState(false)
+  const [signature, setSignature] = useState('')
+
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [message, setMessage] = useState<string | null>(null)
   const [checking, setChecking] = useState(true)
 
-  // ── Route a signed-in user to the correct panel by role. ──
   const routeByRole = async (userId: string) => {
     const { data: profile } = await supabase
       .from('profiles').select('role').eq('id', userId).single()
@@ -35,27 +41,16 @@ export default function LoginPage() {
     router.refresh()
   }
 
-  // ── On load: if there's a REAL session, leave login. If the stored session
-  //    is stale/invalid, just show the form (don't hang on the spinner). ──
   useEffect(() => {
     let active = true
-
-    // Safety net: no matter what happens with the auth check (network hang,
-    // SDK stall, etc.), never leave the user stuck on the spinner. After 2.5s
-    // we show the login form regardless.
     const safety = setTimeout(() => { if (active) setChecking(false) }, 2500)
-
     const check = async () => {
       try {
         const { data: { session } } = await supabase.auth.getSession()
         if (!active) return
-
         if (session?.user) {
-          // Genuinely logged in → route to the right panel.
-          // (Spinner stays until the route change happens — that's fine.)
           routeByRole(session.user.id)
         } else {
-          // Not logged in → show the login form.
           setChecking(false)
         }
       } catch {
@@ -64,18 +59,36 @@ export default function LoginPage() {
         clearTimeout(safety)
       }
     }
-
     check()
     return () => { active = false; clearTimeout(safety) }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
+  // Basic but solid email format check.
+  const isValidEmail = (e: string) => /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e.trim())
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
-    setLoading(true)
     setError(null)
     setMessage(null)
 
+    // ── SIGN-UP validations (email format, terms, signature) ──
+    if (!isLogin) {
+      if (!isValidEmail(email)) {
+        setError('Please enter a valid email address (e.g. name@company.com).')
+        return
+      }
+      if (!acceptedTerms) {
+        setError('You must read and accept the Terms & Conditions to continue.')
+        return
+      }
+      if (!signature.trim() || signature.trim().length < 3) {
+        setError('Please type your full name as your signature to accept the Terms.')
+        return
+      }
+    }
+
+    setLoading(true)
     try {
       if (isLogin) {
         const { data: authData, error: authError } = await supabase.auth.signInWithPassword({ email, password })
@@ -87,8 +100,6 @@ export default function LoginPage() {
           setError('Invalid email or password.')
         }
       } else {
-        // SIGN UP — no email verification. Requires "Confirm email" to be OFF in
-        // Supabase Auth settings so a session is returned immediately.
         const { data: signData, error: signError } = await supabase.auth.signUp({
           email,
           password,
@@ -103,22 +114,32 @@ export default function LoginPage() {
 
         if (signError) {
           setError(signError.message)
-        } else if (signData.session && signData.user) {
-          // Confirm-email is OFF → we got a session → go straight in.
-          await routeByRole(signData.user.id)
         } else if (signData.user) {
-          // Fallback: if a session wasn't returned, try an immediate sign-in.
-          const { data: loginData, error: loginErr } = await supabase.auth.signInWithPassword({ email, password })
-          if (loginErr) {
-            setError('Account created. Please sign in.')
-            setIsLogin(true)
-          } else if (loginData.user) {
-            await routeByRole(loginData.user.id)
+          // Record the Terms acceptance (name + signature + timestamp).
+          try {
+            await supabase.from('terms_acceptances').insert({
+              user_id: signData.user.id,
+              email: email.trim(),
+              full_name: fullName || signature.trim(),
+              signature: signature.trim(),
+            })
+          } catch { /* non-blocking: never stop signup over the audit row */ }
+
+          if (signData.session) {
+            await routeByRole(signData.user.id)
+          } else {
+            // Fallback: confirm-email may be ON → try immediate sign-in.
+            const { data: loginData, error: loginErr } = await supabase.auth.signInWithPassword({ email, password })
+            if (loginErr) {
+              setError('Account created. Please sign in.')
+              setIsLogin(true)
+            } else if (loginData.user) {
+              await routeByRole(loginData.user.id)
+            }
           }
         }
       }
     } catch (err: any) {
-      // Any unexpected throw still surfaces a message instead of silently doing nothing.
       setError(err?.message || 'Something went wrong. Please try again.')
     } finally {
       setLoading(false)
@@ -138,8 +159,6 @@ export default function LoginPage() {
     setLoading(false)
   }
 
-  // While verifying an existing session, show a tiny loader (prevents the
-  // form from flashing for already-logged-in users).
   if (checking) {
     return (
       <main className="relative min-h-screen flex items-center justify-center bg-[#030208]">
@@ -155,6 +174,15 @@ export default function LoginPage() {
          <NeuralBrainScene />
       </div>
       <div className="absolute inset-0 z-10 bg-[radial-gradient(ellipse_at_center,transparent_0%,#030208_100%)] pointer-events-none" />
+
+      {/* ── BACK TO HOME ── */}
+      <Link
+        href="/"
+        className="absolute top-5 left-5 sm:top-8 sm:left-8 z-30 group flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#070512]/70 backdrop-blur-md border border-white/[0.08] text-[#8a80a0] hover:text-white hover:border-[#9b5de5]/40 transition-all"
+      >
+        <svg className="w-4 h-4 transition-transform group-hover:-translate-x-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" /></svg>
+        <span className="text-[11px] font-bold uppercase tracking-[0.15em]">Back to Home</span>
+      </Link>
 
       <div className="relative z-20 w-full max-w-[480px]">
 
@@ -273,6 +301,41 @@ export default function LoginPage() {
               />
             </div>
 
+            {/* ── TERMS & CONDITIONS (sign-up only) ── */}
+            {!isLogin && (
+              <div className="space-y-3 pt-1">
+                <div>
+                  <label className="block text-[11px] font-bold text-[#8a80a0] uppercase tracking-wider mb-2 ml-1">
+                    Signature — Type Your Full Name
+                  </label>
+                  <input
+                    type="text"
+                    value={signature}
+                    onChange={(e) => setSignature(e.target.value)}
+                    className="w-full bg-[#04030a]/80 border border-white/[0.04] rounded-xl px-4 py-3.5 text-white text-sm focus:outline-none focus:border-[#9b5de5]/50 focus:bg-black/60 transition-all shadow-[inset_0_2px_10px_rgba(0,0,0,0.2)] placeholder:text-[#3a3050] font-['Syne',sans-serif] italic"
+                    placeholder="Your full legal name"
+                  />
+                </div>
+
+                <div className="flex items-start gap-3 bg-[#04030a]/60 border border-white/[0.05] rounded-xl p-3.5">
+                  <button
+                    type="button"
+                    onClick={() => setAcceptedTerms(!acceptedTerms)}
+                    className={`shrink-0 mt-0.5 w-5 h-5 rounded-md border flex items-center justify-center transition-all ${acceptedTerms ? 'bg-[#9b5de5] border-[#9b5de5]' : 'bg-transparent border-white/20 hover:border-[#9b5de5]/60'}`}
+                  >
+                    {acceptedTerms && <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                  </button>
+                  <p className="text-[11.5px] leading-relaxed text-[#8a80a0]">
+                    I confirm I have read and accept the{' '}
+                    <button type="button" onClick={() => setShowTerms(true)} className="text-[#9b5de5] hover:text-white font-bold underline underline-offset-2 transition-colors">
+                      Terms &amp; Conditions
+                    </button>
+                    , and I take full responsibility for my account and all actions taken through it.
+                  </p>
+                </div>
+              </div>
+            )}
+
             <button
               type="submit"
               disabled={loading}
@@ -299,6 +362,12 @@ export default function LoginPage() {
         </div>
       </div>
 
+      {showTerms && (
+        <TermsModal
+          onClose={() => setShowTerms(false)}
+          onAccept={() => setAcceptedTerms(true)}
+        />
+      )}
     </main>
   )
 }

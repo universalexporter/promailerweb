@@ -1,7 +1,9 @@
 'use client'
 
 import Link from 'next/link'
+import { useState } from 'react'
 import DownloadButton from '@/components/DownloadButton'
+import TermsModal from '@/components/TermsModal'
 
 const COLS = [
   {
@@ -28,8 +30,8 @@ const COLS = [
     title: 'Company',
     links: [
       { label: 'About',            href: '#' },
-      { label: 'Privacy Policy',   href: '#' },
-      { label: 'Terms of Service', href: '#' },
+      { label: 'Privacy Policy',   href: '#', terms: true },
+      { label: 'Terms of Service', href: '#', terms: true },
       { label: 'Status Page',      href: '#' },
       { label: 'Support',          href: '#' },
     ],
@@ -37,6 +39,8 @@ const COLS = [
 ]
 
 export default function Footer() {
+  const [showTerms, setShowTerms] = useState(false)
+
   return (
     <footer
       style={{
@@ -66,9 +70,7 @@ export default function Footer() {
           <p className="ft-tagline">
             The only desktop-to-cloud bulk email platform with offline-first data privacy and pay-as-you-send economics. Built for operators who demand total control.
           </p>
-
-
-        </div>
+          </div>
 
         {/* Link columns */}
         {COLS.map(col => (
@@ -83,6 +85,11 @@ export default function Footer() {
                       style={{ background:'transparent', border:'none', padding:0, cursor:'pointer' }}>
                       {lnk.label}
                     </DownloadButton>
+                  ) : ('terms' in lnk && lnk.terms) ? (
+                    // Terms / Privacy → open the Terms & Conditions modal
+                    <button onClick={() => setShowTerms(true)} className="ft-col-a" style={{ background:'transparent', border:'none', padding:0, cursor:'pointer', textAlign:'left' }}>
+                      {lnk.label}
+                    </button>
                   ) : (
                     <Link href={lnk.href} className="ft-col-a" style={{ textDecoration:'none' }}>{lnk.label}</Link>
                   )}
@@ -110,6 +117,8 @@ export default function Footer() {
         <p className="ft-copy ft-copy-right">Built for operators. Trusted by enterprises.</p>
       </div>
 
+      {showTerms && <TermsModal onClose={() => setShowTerms(false)} />}
+
       {/* ── STYLES ── */}
       <style>{`
         .ft-main {
@@ -126,9 +135,7 @@ export default function Footer() {
           font-size: clamp(12px,1.1vw,13.5px); font-weight: 300; line-height: 1.75;
           color: #7a7090; max-width: 260px; margin-bottom: 18px; margin-top: 0;
         }
-
-
-        .ft-col-h {
+          .ft-col-h {
           font-family: 'Syne',sans-serif; font-size: 11px; font-weight: 700;
           letter-spacing: 0.12em; text-transform: uppercase; color: #9b5de5;
           margin: 0 0 16px; padding: 0;
