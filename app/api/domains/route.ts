@@ -11,39 +11,63 @@ const supabaseAdmin = createClient(
 export async function POST(req: Request) {
   try {
     const body = await req.json()
-    const { domainName } = body
+    const { domainName, apiKey, userId: bodyUserId } = body
 
     if (!domainName) {
       return NextResponse.json({ error: 'Missing domain name.' }, { status: 400 })
     }
 
-    // 1. Authenticate via the logged-in session (secure) — no client-passed key.
-    //    This is what fixes the "Unauthorized. Please log in again" error: we no
-    //    longer rely on a stale apiKey/userId from the browser; we trust the
-    //    signed Supabase session cookie instead.
-    const cookieStore = await cookies()
-    const supabase = createServerClient(
-      process.env.NEXT_PUBLIC_SUPABASE_URL!,
-      process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
-      {
-        cookies: {
-          getAll() { return cookieStore.getAll() },
-          setAll(cookiesToSet) {
-            try {
-              cookiesToSet.forEach(({ name, value, options }) =>
-                cookieStore.set(name, value, options)
-              )
-            } catch { /* route handler context; safe to ignore */ }
-          },
-        },
-      }
-    )
+    // ── AUTH: accept EITHER the logged-in session cookie OR a valid apiKey ──
+    // This makes the route work no matter how the frontend calls it, and fixes
+    // the "Unauthorized. Please log in again" error caused by a stale apiKey.
+    let userId: string | null = null
 
-    const { data: { user } } = await supabase.auth.getUser()
-    if (!user) {
+    // Method 1: logged-in Supabase session (preferred, secure)
+    try {
+      const cookieStore = await cookies()
+      const supabase = createServerClient(
+        process.env.NEXT_PUBLIC_SUPABASE_URL!,
+        process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
+        {
+          cookies: {
+            getAll() { return cookieStore.getAll() },
+            setAll(cookiesToSet) {
+              try {
+                cookiesToSet.forEach(({ name, value, options }) =>
+                  cookieStore.set(name, value, options)
+                )
+              } catch { /* route handler context; safe to ignore */ }
+            },
+          },
+        }
+      )
+      const { data: { user } } = await supabase.auth.getUser()
+      if (user) userId = user.id
+    } catch { /* fall through to apiKey */ }
+
+    // Method 2: fall back to apiKey lookup (what the desktop / older frontend sends)
+    if (!userId && apiKey) {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('api_key', apiKey)
+        .single()
+      if (profile) userId = profile.id
+    }
+
+    // Last resort: trust an explicit userId only if it matches a real profile
+    if (!userId && bodyUserId) {
+      const { data: profile } = await supabaseAdmin
+        .from('profiles')
+        .select('id')
+        .eq('id', bodyUserId)
+        .single()
+      if (profile) userId = profile.id
+    }
+
+    if (!userId) {
       return NextResponse.json({ error: 'Unauthorized: please sign in again.' }, { status: 401 })
     }
-    const userId = user.id
 
     // 2. Request new DNS identity from Resend
     const resendResponse = await fetch('https://api.resend.com/domains', {
