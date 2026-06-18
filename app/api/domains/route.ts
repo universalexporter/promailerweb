@@ -8,6 +8,40 @@ const supabaseAdmin = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!
 )
 
+// GET — list a client's domains using their apiKey (the DomainManager component
+// can't reliably read the session cookie, so we resolve the user by apiKey here).
+// Usage: GET /api/domains?apiKey=pk_live_xxx
+export async function GET(req: Request) {
+  try {
+    const { searchParams } = new URL(req.url)
+    const apiKey = searchParams.get('apiKey')
+    if (!apiKey) {
+      return NextResponse.json({ domains: [] }, { status: 200 })
+    }
+
+    const { data: profile } = await supabaseAdmin
+      .from('profiles')
+      .select('id, active_plan_id')
+      .eq('api_key', apiKey)
+      .single()
+
+    if (!profile) {
+      return NextResponse.json({ domains: [], plan: null }, { status: 200 })
+    }
+
+    const { data: domains } = await supabaseAdmin
+      .from('client_domains')
+      .select('*')
+      .eq('user_id', profile.id)
+      .order('created_at', { ascending: false })
+
+    return NextResponse.json({ domains: domains || [], plan: profile.active_plan_id || null }, { status: 200 })
+  } catch (e: any) {
+    console.error('Domain list error:', e)
+    return NextResponse.json({ domains: [] }, { status: 200 })
+  }
+}
+
 export async function POST(req: Request) {
   try {
     const body = await req.json()

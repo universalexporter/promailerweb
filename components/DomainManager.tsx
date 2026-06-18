@@ -41,29 +41,20 @@ export default function DomainManager({ apiKey }: { apiKey: string }) {
 
   useEffect(() => {
     fetchDomains()
-    fetchPlanLimit()
   }, [])
 
-  const fetchPlanLimit = async () => {
-    try {
-      const { data: { session } } = await supabase.auth.getSession()
-      if (!session) return
-      const { data } = await supabase.from('profiles')
-        .select('active_plan_id')
-        .eq('id', session.user.id)
-        .single()
-      if (data) setDomainLimit(planDomainLimit(data.active_plan_id))
-    } catch { /* keep default of 1 */ }
-  }
-
   const fetchDomains = async () => {
-    const { data: { session } } = await supabase.auth.getSession()
-    if (!session) return
-    const { data } = await supabase.from('client_domains')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .order('created_at', { ascending: false })
-    if (data) setDomains(data)
+    try {
+      // Use the API (resolves user by apiKey) — this component's Supabase client
+      // can't reliably read the session cookie, which previously made domains
+      // silently fail to load even though they exist.
+      const res = await fetch(`/api/domains?apiKey=${encodeURIComponent(apiKey)}`, { cache: 'no-store' })
+      const data = await res.json()
+      if (data.domains) setDomains(data.domains)
+      if (data.plan !== undefined) setDomainLimit(planDomainLimit(data.plan))
+    } catch (err) {
+      console.error('Failed to load domains:', err)
+    }
   }
 
   const handleAddDomain = async (e?: React.FormEvent) => {
