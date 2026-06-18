@@ -103,6 +103,31 @@ export default function DashboardPage() {
     }
   }
 
+  // Unlock audio on the first user interaction so the very first notification
+  // tick can play (browsers block sound until the page is interacted with).
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        if (!tickSoundRef.current) {
+          const a = new Audio('/tick.mp3')
+          a.preload = 'auto'
+          tickSoundRef.current = a
+        }
+        const a = tickSoundRef.current
+        a.muted = true
+        a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false }).catch(() => { a.muted = false })
+      } catch { /* ignore */ }
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
   // Safe sign-out + redirect, reused by the stale-session guard and the button.
   const forceLogout = async () => {
     try { await supabase.auth.signOut() } catch { /* ignore */ }
@@ -662,8 +687,8 @@ export default function DashboardPage() {
                     <div className="flex flex-col gap-4 mb-8">
                         {dynamicTiers.map((tier) => {
                         let displayPrice = tier.price
-                        const isCurrentPlan = isAccountActive && currentPlanObj.id === tier.id
-                        if (isUpgrading && !isCurrentPlan) displayPrice = Math.max(0, tier.price - currentPlanObj.price)
+                        const isCurrentPlan = isAccountActive && !isPaysOnly && currentPlanObj.id === tier.id
+                        if (isUpgrading && !isCurrentPlan && !isPaysOnly) displayPrice = Math.max(0, tier.price - currentPlanObj.price)
                         const isSelected = selectedTier === tier.id
                         const isPro = tier.id === 'pro'
 
