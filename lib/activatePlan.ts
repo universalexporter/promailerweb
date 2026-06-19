@@ -58,6 +58,9 @@ export async function activateTransaction(txn_id: string): Promise<ActivateResul
     if (wErr) return { ok: false, error: `Wallet update failed: ${wErr.message}` }
   } else {
     // 2b. ACTIVATION / UPGRADE → set the chosen plan + a fresh 30-day timer.
+    // Activation is driven ENTIRELY by the transaction's plan_id (the plan the
+    // user chose) — never by the amount paid. Whatever price the admin sets,
+    // paying for "starter" activates "starter".
     const planId = txn.plan_id && txn.plan_id !== 'wallet' ? txn.plan_id : 'starter'
     const expiresAt = new Date()
     expiresAt.setDate(expiresAt.getDate() + 30)
@@ -67,6 +70,8 @@ export async function activateTransaction(txn_id: string): Promise<ActivateResul
       .update({
         active_plan_id: planId,
         plan_expires_at: expiresAt.toISOString(),
+        pays_enabled: false,   // a real paid plan replaces any Test/PAYS package
+        emails_sent: 0,        // fresh plan starts the usage counter at zero
       })
       .eq('id', txn.user_id)
     if (pErr) return { ok: false, error: `Plan activation failed: ${pErr.message}` }
