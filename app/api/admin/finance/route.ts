@@ -40,10 +40,15 @@ export async function GET() {
     const { count: domainCount } = await supabaseAdmin
       .from('client_domains').select('id', { count: 'exact', head: true })
 
-    // total emails sent across all clients (sum of profiles.emails_sent)
+    // total emails sent across all clients (sum of profiles.emails_sent).
+    // Pull id+email+emails_sent so we can also show a per-client breakdown.
     const { data: sentRows } = await supabaseAdmin
-      .from('profiles').select('emails_sent')
+      .from('profiles').select('id, email, emails_sent, active_plan_id')
     const totalEmailsSent = (sentRows || []).reduce((s, r) => s + (Number(r.emails_sent) || 0), 0)
+    const perClientSends = (sentRows || [])
+      .map(r => ({ email: r.email || 'unknown', plan: r.active_plan_id || '—', sent: Number(r.emails_sent) || 0 }))
+      .filter(r => r.sent > 0)
+      .sort((a, b) => b.sent - a.sent)
 
     // ── Manual entries ──
     const { data: entries } = await supabaseAdmin
@@ -77,6 +82,7 @@ export async function GET() {
         domains: domainCount || 0,
         emailsSent: totalEmailsSent,
       },
+      perClientSends,
       income: {
         subscriptions: incomeSubscriptions,
         topups: incomeTopups,

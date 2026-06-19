@@ -170,9 +170,32 @@ export default function SupportDesk() {
       fetchSystemPricing()
       fetchTransactions()
       fetchCanned()
+      scanLoginUnread(session.user.id)
     }
     initializeAdmin()
   }, [router])
+
+  // On login, flag any client who messaged since the admin was last here, so the
+  // "New" badges appear immediately (web can't notify while logged out).
+  const scanLoginUnread = async (adminId: string) => {
+    try {
+      const lastSeen = localStorage.getItem('promail_admin_inbox_seen')
+      const lastSeenTime = lastSeen ? new Date(lastSeen) : new Date(0)
+      const { data: recent } = await supabase
+        .from('support_messages')
+        .select('sender_id, created_at')
+        .gt('created_at', lastSeenTime.toISOString())
+        .order('created_at', { ascending: false })
+        .limit(500)
+      if (recent && recent.length > 0) {
+        const flags: Record<string, boolean> = {}
+        recent.forEach((m: any) => { if (m.sender_id && m.sender_id !== adminId) flags[m.sender_id] = true })
+        setUnreadClients(prev => ({ ...prev, ...flags }))
+      }
+      // mark "now" as seen so reopening the desk doesn't keep re-flagging
+      localStorage.setItem('promail_admin_inbox_seen', new Date().toISOString())
+    } catch { /* localStorage / query issue — skip */ }
+  }
 
   const fetchMasterDatabase = async () => {
     try {
@@ -493,7 +516,7 @@ export default function SupportDesk() {
       .channel('admin_support_chat')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, (payload) => {
         const newMsg = payload.new
-        setMessages((prev) => [...prev, newMsg])
+        setMessages((prev) => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
         if (newMsg.sender_id === selectedClient.id) {
           playTick()
         }

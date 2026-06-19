@@ -88,6 +88,7 @@ export default function DashboardPage() {
   // never throws a console error. We only attempt to load it on the client.
   const tickSoundRef = useRef<HTMLAudioElement | null>(null)
   const [chatUnread, setChatUnread] = useState(0)
+  const [loginUnread, setLoginUnread] = useState(0)
   const playTick = () => {
     try {
       if (typeof window === 'undefined') return
@@ -292,7 +293,17 @@ export default function DashboardPage() {
       if (!ticket) return
       setChatTicketId(ticket.id)
       const { data: msgs } = await supabase.from('support_messages').select('*').eq('ticket_id', ticket.id).order('created_at', { ascending: true })
-      if (msgs) setChatMessages(msgs)
+      if (msgs) {
+        setChatMessages(msgs)
+        // Count messages from support (not from this user) newer than the last
+        // time this client opened the chat — shown as a "you have messages" banner.
+        try {
+          const lastSeen = localStorage.getItem(`promail_chat_seen_${userId}`)
+          const lastSeenTime = lastSeen ? new Date(lastSeen).getTime() : 0
+          const unread = msgs.filter((m: any) => m.sender_id !== userId && new Date(m.created_at).getTime() > lastSeenTime).length
+          setLoginUnread(unread)
+        } catch { /* localStorage unavailable — skip */ }
+      }
     }
 
     initializeChat()
@@ -301,7 +312,7 @@ export default function DashboardPage() {
       .channel('client_support_chat')
       .on('postgres_changes', { event: 'INSERT', schema: 'public', table: 'support_messages' }, (payload) => {
         const newMsg = payload.new
-        setChatMessages((prev) => [...prev, newMsg])
+        setChatMessages((prev) => prev.some(m => m.id === newMsg.id) ? prev : [...prev, newMsg])
         if (newMsg.sender_id !== userId) {
           playTick()
           // If the chat panel is closed, show a notification badge on the bubble
@@ -484,12 +495,28 @@ export default function DashboardPage() {
                   {isAccountActive && !isPlanExpired ? 'Active Plan' : 'Plan Inactive'}
                 </span>
               </div>
+              <div className="flex items-center">
+                <span className="text-[9px] md:text-[10px] font-bold uppercase tracking-[0.2em] px-3 py-1.5 rounded-lg border border-[#9b5de5]/30 text-[#9b5de5] bg-[#9b5de5]/10 backdrop-blur-md">
+                  {emailsSent.toLocaleString()} Emails Sent
+                </span>
+              </div>
             </div>
           </div>
           <button onClick={handleSignOut} disabled={isLoggingOut} className="w-full md:w-auto relative z-10 text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] text-[#8a80a0] hover:text-white transition-all border border-white/[0.08] px-6 py-3 rounded-xl bg-[#070512]/80 hover:bg-white/[0.05] hover:border-[#9b5de5]/30 shadow-[inset_0_1px_0_rgba(255,255,255,0.05),0_4px_15px_rgba(0,0,0,0.5)]">
             {isLoggingOut ? 'Signing out...' : 'Sign Out'}
           </button>
         </header>
+
+        {/* ── You-have-messages banner (shown on login if support replied) ── */}
+        {loginUnread > 0 && (
+          <section className="mb-6 relative overflow-hidden rounded-2xl border border-[#10b981]/30 bg-gradient-to-r from-[#10b981]/[0.1] to-transparent p-4 sm:p-5 flex items-center justify-between gap-4 backdrop-blur-xl">
+            <div className="flex items-center gap-3">
+              <span className="w-2.5 h-2.5 rounded-full bg-[#10b981] shadow-[0_0_10px_#10b981] animate-pulse shrink-0" />
+              <p className="text-sm text-white font-medium">You have <span className="font-bold text-[#10b981]">{loginUnread}</span> new message{loginUnread > 1 ? 's' : ''} from support.</p>
+            </div>
+            <button onClick={() => { setIsChatOpen(true); setLoginUnread(0); try { localStorage.setItem(`promail_chat_seen_${userId}`, new Date().toISOString()) } catch {} }} className="shrink-0 text-[10px] font-bold uppercase tracking-widest text-[#10b981] border border-[#10b981]/40 px-4 py-2 rounded-lg hover:bg-[#10b981] hover:text-black transition-all">Open Chat</button>
+          </section>
+        )}
 
         {/* ── Request Private Setup banner ── */}
         <section className="mb-8 sm:mb-10 relative overflow-hidden rounded-2xl sm:rounded-3xl border border-[#9b5de5]/25 bg-gradient-to-r from-[#9b5de5]/[0.08] via-[#0a0614]/60 to-[#10b981]/[0.06] backdrop-blur-xl p-5 sm:p-6 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 shadow-[0_20px_50px_-20px_rgba(0,0,0,0.7)]">
@@ -908,7 +935,7 @@ export default function DashboardPage() {
           </div>
         </div>
 
-        <button onClick={() => { setIsChatOpen(!isChatOpen); setChatUnread(0) }} className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-tr from-[#020106] to-[#1a0b2e] rounded-full flex items-center justify-center shadow-[0_10px_40px_rgba(0,0,0,0.9),0_0_25px_rgba(155,93,229,0.4)] hover:shadow-[0_0_50px_rgba(155,93,229,0.7)] hover:scale-105 transition-all duration-300 pointer-events-auto border border-white/10 group relative z-50 text-white">
+        <button onClick={() => { setIsChatOpen(!isChatOpen); setChatUnread(0); setLoginUnread(0); try { localStorage.setItem(`promail_chat_seen_${userId}`, new Date().toISOString()) } catch {} }} className="w-14 h-14 sm:w-16 sm:h-16 bg-gradient-to-tr from-[#020106] to-[#1a0b2e] rounded-full flex items-center justify-center shadow-[0_10px_40px_rgba(0,0,0,0.9),0_0_25px_rgba(155,93,229,0.4)] hover:shadow-[0_0_50px_rgba(155,93,229,0.7)] hover:scale-105 transition-all duration-300 pointer-events-auto border border-white/10 group relative z-50 text-white">
           <div className="absolute inset-0 rounded-full border border-[#9b5de5]/30 group-hover:border-[#9b5de5]/80 transition-colors duration-300"></div>
           {isChatOpen ? <Icons.Close /> : (
             <div className="relative">
