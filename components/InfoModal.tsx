@@ -13,12 +13,10 @@ export default function InfoModal({ title, body, onClose }: InfoModalProps) {
   const [mounted, setMounted] = useState(false)
   useEffect(() => {
     setMounted(true)
-    document.body.classList.add('modal-open')
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     window.addEventListener('keydown', onKey)
     return () => {
       window.removeEventListener('keydown', onKey)
-      document.body.classList.remove('modal-open')
     }
   }, [onClose])
 

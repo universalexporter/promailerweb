@@ -78,7 +78,6 @@ export default function CustomCursor() {
         pointerEvents: 'none',
         transform:     'translate(-50%, -50%)',
         boxShadow:     '0 0 12px #9b5de5, 0 0 24px rgba(155,93,229,0.5)',
-        mixBlendMode:  'screen',
         transition:    'width 0.15s ease, height 0.15s ease, background 0.15s ease',
         willChange:    'left, top',
         top: 0, left: 0,

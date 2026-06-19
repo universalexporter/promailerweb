@@ -19,23 +19,18 @@ body {
 
 * { cursor: none !important; }
 
-/* ── WHEN A MODAL IS OPEN, RESTORE THE REAL CURSOR ──
-   Modal overlays use backdrop-filter:blur, which composites on top of the
-   custom cursor no matter how high its z-index is — making it look "stuck"
-   or invisible over modals. While a modal is open we add .modal-open to
-   <body>; that brings back the normal system cursor so everything on the
-   modal is visible and clickable. */
-body.modal-open, body.modal-open * { cursor: auto !important; }
-body.modal-open .cursor-dot, body.modal-open .cursor-ring,
-body.modal-open [class*="cursor-dot"], body.modal-open [class*="cursor-ring"] {
-  display: none !important;
-}
-
 /* ── CUSTOM CURSOR MUST NEVER BLOCK CLICKS/HOVER ── */
 .cursor-dot, .cursor-ring, #cursor-dot, #cursor-ring,
 [class*="cursor-dot"], [class*="cursor-ring"], [class*="custom-cursor"] {
   pointer-events: none !important;
 }
+
+/* ── SCROLL-REVEAL SAFETY NET ──
+   Reveal sections animate from hidden to visible via JS. If the observer ever
+   misfires (fast scroll, re-render), the content could get stuck invisible.
+   This guarantees it always ends up visible after the animation window. */
+@keyframes reveal-failsafe { to { opacity: 1; transform: none; } }
+[data-reveal] { animation: reveal-failsafe 0.01s linear 1.2s forwards; }
 
 ::-webkit-scrollbar { width: 3px; }
 ::-webkit-scrollbar-track { background: #04030a; }
