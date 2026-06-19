@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from 'react'
 import { useRouter } from 'next/navigation'
 import { supabase } from '@/lib/supabaseClient'
+import FinanceDashboard from '@/components/FinanceDashboard'
 
 type ClientData = {
   id: string
@@ -71,7 +72,7 @@ export default function SupportDesk() {
   const [clientDomains, setClientDomains] = useState<DomainData[]>([])
   // global view now has sub-views: 'pricing' | 'transactions'
   const [activeTab, setActiveTab] = useState<'chat' | 'settings' | 'global'>('global')
-  const [globalView, setGlobalView] = useState<'pricing' | 'transactions'>('transactions')
+  const [globalView, setGlobalView] = useState<'pricing' | 'transactions' | 'finance'>('transactions')
 
   const [messages, setMessages] = useState<any[]>([])
   const [newMessage, setNewMessage] = useState('')
@@ -838,9 +839,20 @@ export default function SupportDesk() {
                 <button onClick={() => setGlobalView('pricing')} className={`flex-1 sm:flex-none px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.15em] transition-all ${globalView === 'pricing' ? 'bg-[#10b981] text-black' : 'text-[#8a80a0] hover:text-white'}`}>
                   Pricing
                 </button>
+                <button onClick={() => setGlobalView('finance')} className={`flex-1 sm:flex-none px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.15em] transition-all ${globalView === 'finance' ? 'bg-gradient-to-r from-[#f59e0b] to-[#d97706] text-black' : 'text-[#8a80a0] hover:text-white'}`}>
+                  Finance
+                </button>
               </div>
 
-              {globalView === 'transactions' ? (
+              {globalView === 'finance' ? (
+                <div className="animate-[fadeIn_0.3s_ease-out]">
+                  <div className="mb-8 border-b border-white/[0.05] pb-6">
+                    <h2 className="font-['Syne',sans-serif] text-2xl sm:text-3xl font-bold text-white mb-2 tracking-tight">Finance & Profit</h2>
+                    <p className="text-[#8a80a0] text-xs sm:text-sm uppercase tracking-widest font-bold">Income, costs, and net profit — live from real data.</p>
+                  </div>
+                  <FinanceDashboard />
+                </div>
+              ) : globalView === 'transactions' ? (
                 <div className="animate-[fadeIn_0.3s_ease-out]">
                   <div className="flex flex-col sm:flex-row sm:justify-between sm:items-end gap-4 mb-8 border-b border-white/[0.05] pb-6">
                     <div>
