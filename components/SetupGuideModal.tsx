@@ -69,9 +69,10 @@ export default function SetupGuideModal({ onClose }: { onClose: () => void }) {
     setMounted(true)
     const prev = document.body.style.overflow
     document.body.style.overflow = 'hidden'
+    document.body.classList.add('modal-open')
     const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose() }
     document.addEventListener('keydown', onKey)
-    return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey) }
+    return () => { document.body.style.overflow = prev; document.removeEventListener('keydown', onKey); document.body.classList.remove('modal-open') }
   }, [onClose])
 
   if (!mounted) return null

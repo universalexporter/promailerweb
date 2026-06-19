@@ -181,6 +181,11 @@ export default function TermsModal({ onClose, onAccept }: TermsModalProps) {
   useEffect(() => { setMounted(true) }, [])
 
   useEffect(() => {
+    document.body.classList.add('modal-open')
+    return () => { document.body.classList.remove('modal-open') }
+  }, [])
+
+  useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose()
       if (e.key === 'ArrowRight' && page < last) setPage(p => p + 1)

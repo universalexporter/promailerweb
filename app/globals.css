@@ -19,12 +19,19 @@ body {
 
 * { cursor: none !important; }
 
-/* ── CUSTOM CURSOR MUST NEVER BLOCK CLICKS/HOVER ──
-   The custom-cursor elements follow the mouse across the whole screen. Without
-   pointer-events:none they sit ON TOP of everything (including modals) and
-   swallow every click and hover — which made the X un-clickable and hover
-   "disappear" on the guide and terms modals. This forces them to be visual
-   only, so the mouse passes straight through to the real UI underneath. */
+/* ── WHEN A MODAL IS OPEN, RESTORE THE REAL CURSOR ──
+   Modal overlays use backdrop-filter:blur, which composites on top of the
+   custom cursor no matter how high its z-index is — making it look "stuck"
+   or invisible over modals. While a modal is open we add .modal-open to
+   <body>; that brings back the normal system cursor so everything on the
+   modal is visible and clickable. */
+body.modal-open, body.modal-open * { cursor: auto !important; }
+body.modal-open .cursor-dot, body.modal-open .cursor-ring,
+body.modal-open [class*="cursor-dot"], body.modal-open [class*="cursor-ring"] {
+  display: none !important;
+}
+
+/* ── CUSTOM CURSOR MUST NEVER BLOCK CLICKS/HOVER ── */
 .cursor-dot, .cursor-ring, #cursor-dot, #cursor-ring,
 [class*="cursor-dot"], [class*="cursor-ring"], [class*="custom-cursor"] {
   pointer-events: none !important;

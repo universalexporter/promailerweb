@@ -757,10 +757,13 @@ export default function DashboardPage() {
                   <button
                     onClick={() => {
                       const selectedPlanObj = dynamicTiers.find(t => t.id === selectedTier) || dynamicTiers[0]
-                      let checkoutPrice = isUpgrading ? Math.max(0, selectedPlanObj.price - currentPlanObj.price) : selectedPlanObj.price
-                      handleCheckout(checkoutPrice, `${selectedPlanObj.name} ${isUpgrading ? 'Upgrade' : 'Subscription'}`, isUpgrading ? 'upgrade' : 'activation', selectedPlanObj.id)
+                      if (!selectedPlanObj || !(selectedPlanObj.price > 0)) return
+                      // Always charge the FULL price of the plan the user selected,
+                      // and activate that exact plan id. No upgrade-discount math
+                      // (which could resolve to 0 and break the payment).
+                      handleCheckout(selectedPlanObj.price, `${selectedPlanObj.name} Subscription`, 'activation', selectedPlanObj.id)
                     }}
-                    disabled={dynamicTiers.length === 0 || isProcessingCheckout || (isUpgrading && selectedTier === currentPlanObj.id)}
+                    disabled={dynamicTiers.length === 0 || isProcessingCheckout || !selectedTier || (!isPaysOnly && selectedTier === activePlanId)}
                     className="w-full relative group/btn overflow-hidden rounded-xl p-[1px] disabled:opacity-50 mt-auto shrink-0 shadow-[0_10px_40px_rgba(155,93,229,0.2)]"
                   >
                     <span className="absolute inset-0 bg-gradient-to-r from-[#9b5de5] via-[#6c3b9c] to-[#9b5de5] opacity-100 transition-opacity duration-300" />
