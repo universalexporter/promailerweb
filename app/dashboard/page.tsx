@@ -656,10 +656,10 @@ export default function DashboardPage() {
 
                     <div className="mb-2 flex justify-between text-[11px] font-bold text-white">
                       <span className="uppercase tracking-widest text-[#8a80a0]">{isPaysOnly ? 'Emails Used' : 'Monthly Usage'}</span>
-                      <span className="font-mono text-[#9b5de5]">{isPaysOnly ? `${(pays?.usedTotal || 0).toLocaleString()} / ${(pays?.total || 0).toLocaleString()}` : `${emailsSent.toLocaleString()} / ${currentPlanObj.email_limit?.toLocaleString()}`}</span>
+                      <span className="font-mono text-[#9b5de5]">{isPaysOnly ? `${emailsSent.toLocaleString()} / ${(pays?.total || 0).toLocaleString()}` : `${emailsSent.toLocaleString()} / ${currentPlanObj.email_limit?.toLocaleString()}`}</span>
                     </div>
                     <div className="relative w-full h-2 bg-[#020106] rounded-full shadow-inner border border-white/[0.05] overflow-hidden">
-                      <div className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${usagePercentage > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5]'}`} style={{ width: `${isPaysOnly ? (pays && pays.total > 0 ? Math.min(100, (pays.usedTotal / pays.total) * 100) : 0) : usagePercentage}%` }} />
+                      <div className={`absolute left-0 top-0 h-full rounded-full transition-all duration-1000 ${usagePercentage > 90 ? 'bg-red-500' : 'bg-gradient-to-r from-[#6c3b9c] to-[#9b5de5]'}`} style={{ width: `${isPaysOnly ? (pays && pays.total > 0 ? Math.min(100, (emailsSent / pays.total) * 100) : 0) : usagePercentage}%` }} />
                     </div>
                   </div>
 

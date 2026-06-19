@@ -199,7 +199,7 @@ export default function TermsModal({ onClose, onAccept }: TermsModalProps) {
       onClick={onClose}
       data-lenis-prevent
       style={{
-        position: 'fixed', inset: 0, zIndex: 2147483647,
+        position: 'fixed', inset: 0, zIndex: 2147483646,
         display: 'block', overflowY: 'scroll', WebkitOverflowScrolling: 'touch',
         background: 'rgba(2,1,6,0.85)', backdropFilter: 'blur(10px)', WebkitBackdropFilter: 'blur(10px)',
         padding: '40px 18px',
