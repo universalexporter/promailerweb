@@ -327,8 +327,13 @@ export default function DashboardPage() {
   }
 
   const [requestingSetup, setRequestingSetup] = useState(false)
+  const setupSentRef = useRef(false)
   const handleRequestPrivateSetup = async () => {
-    if (!userId || requestingSetup) return
+    // Synchronous guard: state updates are async, so a fast double-fire could
+    // slip through `requestingSetup`. The ref blocks the second call instantly,
+    // so only ONE message is ever sent.
+    if (!userId || requestingSetup || setupSentRef.current) return
+    setupSentRef.current = true
     setRequestingSetup(true)
     try {
       // Make sure a ticket exists
@@ -353,6 +358,7 @@ export default function DashboardPage() {
       })
     } catch (err) {
       console.error('Private setup request failed:', err)
+      setupSentRef.current = false   // allow a retry if it genuinely failed
       alert('Could not start the request. Please try the chat directly.')
     } finally {
       setRequestingSetup(false)

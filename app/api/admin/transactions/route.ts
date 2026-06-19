@@ -58,6 +58,26 @@ export async function POST(req: Request) {
       return NextResponse.json({ success: true, detail: result.detail, alreadyDone: result.alreadyDone || false }, { status: 200 })
     }
 
+    // Reject a pending payment: mark it rejected (keeps the record, no activation).
+    if (action === 'reject') {
+      const { error } = await supabaseAdmin
+        .from('transactions')
+        .update({ status: 'rejected', updated_at: new Date().toISOString() })
+        .eq('txn_id', txn_id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ success: true, detail: 'Transaction rejected' }, { status: 200 })
+    }
+
+    // Permanently delete a transaction row from the ledger.
+    if (action === 'delete') {
+      const { error } = await supabaseAdmin
+        .from('transactions')
+        .delete()
+        .eq('txn_id', txn_id)
+      if (error) return NextResponse.json({ error: error.message }, { status: 400 })
+      return NextResponse.json({ success: true, detail: 'Transaction deleted' }, { status: 200 })
+    }
+
     return NextResponse.json({ error: `Unknown action: ${action}` }, { status: 400 })
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 })

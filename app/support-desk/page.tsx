@@ -127,6 +127,28 @@ export default function SupportDesk() {
     } catch { /* sound is optional */ }
   }
 
+  // Unlock audio on the first interaction so the first tick can play.
+  useEffect(() => {
+    const unlock = () => {
+      try {
+        if (!tickSoundRef.current) {
+          const a = new Audio('/tick.mp3'); a.preload = 'auto'; tickSoundRef.current = a
+        }
+        const a = tickSoundRef.current
+        a.muted = true
+        a.play().then(() => { a.pause(); a.currentTime = 0; a.muted = false }).catch(() => { a.muted = false })
+      } catch { /* ignore */ }
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+    window.addEventListener('pointerdown', unlock)
+    window.addEventListener('keydown', unlock)
+    return () => {
+      window.removeEventListener('pointerdown', unlock)
+      window.removeEventListener('keydown', unlock)
+    }
+  }, [])
+
   useEffect(() => {
     const initializeAdmin = async () => {
       const { data: { session } } = await supabase.auth.getSession()
@@ -229,6 +251,44 @@ export default function SupportDesk() {
       await fetchTransactions()
       fetchMasterDatabase()
       alert(data.alreadyDone ? 'This transaction was already completed.' : 'Approved and activated successfully.')
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  const handleRejectTxn = async (txn: TxnData) => {
+    if (!confirm(`Reject this pending payment from ${txn.email}? It will NOT activate anything.`)) return
+    setApprovingId(txn.txn_id)
+    try {
+      const res = await fetch('/api/admin/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'reject', txn_id: txn.txn_id })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Reject failed')
+      await fetchTransactions()
+    } catch (error: any) {
+      alert(`Error: ${error.message}`)
+    } finally {
+      setApprovingId(null)
+    }
+  }
+
+  const handleDeleteTxn = async (txn: TxnData) => {
+    if (!confirm(`Permanently DELETE this transaction from ${txn.email}? This removes the record entirely.`)) return
+    setApprovingId(txn.txn_id)
+    try {
+      const res = await fetch('/api/admin/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: 'delete', txn_id: txn.txn_id })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Delete failed')
+      await fetchTransactions()
     } catch (error: any) {
       alert(`Error: ${error.message}`)
     } finally {
@@ -844,13 +904,21 @@ export default function SupportDesk() {
                                   )}
                                 </td>
                                 <td className="px-5 py-4 text-right">
-                                  {isPending ? (
-                                    <button onClick={() => handleApproveTxn(t)} disabled={approvingId === t.txn_id} className="px-4 py-2 bg-[#10b981] text-black rounded-lg text-[10px] font-extrabold uppercase tracking-widest hover:bg-[#0ea571] transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
-                                      {approvingId === t.txn_id ? 'Approving...' : 'Approve'}
+                                  <div className="flex items-center justify-end gap-2">
+                                    {isPending && (
+                                      <>
+                                        <button onClick={() => handleApproveTxn(t)} disabled={approvingId === t.txn_id} className="px-4 py-2 bg-[#10b981] text-black rounded-lg text-[10px] font-extrabold uppercase tracking-widest hover:bg-[#0ea571] transition-all disabled:opacity-50 shadow-[0_0_15px_rgba(16,185,129,0.3)]">
+                                          {approvingId === t.txn_id ? '...' : 'Approve'}
+                                        </button>
+                                        <button onClick={() => handleRejectTxn(t)} disabled={approvingId === t.txn_id} className="px-3 py-2 bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-[#f59e0b] hover:text-black transition-all disabled:opacity-50">
+                                          Reject
+                                        </button>
+                                      </>
+                                    )}
+                                    <button onClick={() => handleDeleteTxn(t)} disabled={approvingId === t.txn_id} className="px-3 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest hover:bg-red-500 hover:text-white transition-all disabled:opacity-50">
+                                      Del
                                     </button>
-                                  ) : (
-                                    <span className="text-[#8a80a0]/40 text-[10px] font-mono">—</span>
-                                  )}
+                                  </div>
                                 </td>
                               </tr>
                             )
@@ -1078,9 +1146,9 @@ export default function SupportDesk() {
                       {selectedClient.pays_enabled ? (
                         <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 mb-6">
                           <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Total Quota</div><div className="text-lg font-black text-white font-mono">{(selectedClient.pays_total_quota || 0).toLocaleString()}</div></div>
-                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Used Total</div><div className="text-lg font-black text-[#f59e0b] font-mono">{(selectedClient.pays_used_total || 0).toLocaleString()}</div></div>
+                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Used (Sent)</div><div className="text-lg font-black text-[#f59e0b] font-mono">{(selectedClient.emails_sent || 0).toLocaleString()}</div></div>
                           <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Daily Cap</div><div className="text-lg font-black text-white font-mono">{(selectedClient.pays_daily_cap || 0).toLocaleString()}</div></div>
-                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Remaining</div><div className="text-lg font-black text-[#10b981] font-mono">{Math.max(0, (selectedClient.pays_total_quota || 0) - (selectedClient.pays_used_total || 0)).toLocaleString()}</div></div>
+                          <div><div className="text-[9px] text-[#8a80a0] uppercase tracking-widest font-bold mb-1">Remaining</div><div className="text-lg font-black text-[#10b981] font-mono">{Math.max(0, (selectedClient.pays_total_quota || 0) - (selectedClient.emails_sent || 0)).toLocaleString()}</div></div>
                         </div>
                       ) : (
                         <p className="text-[#8a80a0] text-sm mb-6">No email package set. Activate to grant this client a fixed number of emails (with an optional daily cap and expiry) — no balance or subscription needed.</p>
