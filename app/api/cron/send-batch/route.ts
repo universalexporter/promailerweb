@@ -49,6 +49,15 @@ export async function POST(req: Request) {
   }
 
   try {
+    // 0.5 Promote any SCHEDULED jobs whose time has come → make them 'active'.
+    //     This is what lets scheduled campaigns fire even when the desktop app is
+    //     closed: the cron runs every minute on the server and flips due jobs on.
+    await supabaseAdmin
+      .from('send_jobs')
+      .update({ status: 'active', updated_at: new Date().toISOString() })
+      .eq('status', 'scheduled')
+      .lte('scheduled_for', new Date().toISOString())
+
     // 1. Grab the oldest active job
     const { data: job } = await supabaseAdmin
       .from('send_jobs')
