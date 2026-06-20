@@ -510,16 +510,30 @@ export default function SupportDesk() {
       if (ticket) {
         setTicketId(ticket.id)
         const { data: msgs } = await supabase.from('support_messages').select('*').eq('ticket_id', ticket.id).order('created_at', { ascending: true })
-        if (msgs) setMessages(msgs)
+        if (msgs) {
+        setMessages(msgs)
+        // Mark this client as "seen" up to the newest message we just loaded, so
+        // everything currently in the chat counts as read and won't re-flag on
+        // the next login. Use the newest message time (or now if empty).
+        try {
+          const newest = msgs.length > 0 ? msgs[msgs.length - 1].created_at : new Date().toISOString()
+          const newestTime = new Date(newest).getTime()
+          const existing = localStorage.getItem(`promail_seen_${selectedClient.id}`)
+          // only move the marker forward, never backward
+          if (!existing || new Date(existing).getTime() < newestTime) {
+            localStorage.setItem(`promail_seen_${selectedClient.id}`, new Date(newestTime + 1000).toISOString())
+          }
+        } catch { /* ignore */ }
+      }
       }
       const { data: domains } = await supabase.from('client_domains').select('*').eq('user_id', selectedClient.id)
       if (domains) setClientDomains(domains)
     }
     loadClientSpecifics()
-    // opening a client clears their unread flag AND persists a "seen" marker so
-    // it never re-appears on the next login.
+    // opening a client clears their unread flag immediately in the UI; the
+    // persistent "seen" marker is written inside loadClientSpecifics based on the
+    // newest loaded message, so it never re-appears on the next login.
     setUnreadClients(prev => { const n = { ...prev }; delete n[selectedClient.id]; return n })
-    try { localStorage.setItem(`promail_seen_${selectedClient.id}`, new Date().toISOString()) } catch { /* ignore */ }
 
     const channel = supabase
       .channel('admin_support_chat')
@@ -714,7 +728,7 @@ export default function SupportDesk() {
   }
 
   return (
-    <main className="min-h-screen bg-[#020106] text-white font-['DM_Sans',sans-serif] flex flex-col md:flex-row selection:bg-[#9b5de5]/30">
+    <main className="min-h-screen bg-[#020106] text-white font-['DM_Sans',sans-serif] flex flex-col md:flex-row selection:bg-[#9b5de5]/30 overflow-x-hidden max-w-[100vw]">
 
       <style dangerouslySetInnerHTML={{__html: `
         .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
@@ -862,8 +876,8 @@ export default function SupportDesk() {
       <div className="flex-1 flex flex-col bg-[radial-gradient(circle_at_top,#1a0b2e_0%,#020106_60%)] relative min-w-0">
 
         {activeTab === 'global' ? (
-          <div className="flex-1 p-5 sm:p-10 custom-scrollbar">
-            <div className="max-w-5xl mx-auto">
+          <div className="flex-1 p-4 sm:p-10 custom-scrollbar min-w-0 w-full overflow-x-hidden">
+            <div className="max-w-5xl mx-auto min-w-0 w-full">
 
               {/* Global sub-nav: Transactions | Pricing */}
               <div className="flex gap-2 mb-8 bg-white/[0.02] p-1 rounded-xl border border-white/[0.05] w-full sm:w-fit">
@@ -1091,15 +1105,15 @@ export default function SupportDesk() {
                     ‹ Back to list
                   </button>
                   <h2 className="font-['Syne',sans-serif] font-bold text-xl sm:text-3xl tracking-tight truncate">{selectedClient.email}</h2>
-                  <div className="text-[11px] font-mono text-[#8a80a0] mt-3 flex flex-wrap items-center gap-3">
+                  <div className="text-[11px] font-mono text-[#8a80a0] mt-3 flex flex-col sm:flex-row sm:flex-wrap sm:items-center gap-2 sm:gap-3 min-w-0">
                     <span className="uppercase tracking-widest font-bold opacity-50">API Identifier</span>
-                    <code className="bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 text-[#9b5de5] select-all cursor-text transition-colors hover:bg-white/10 break-all">{selectedClient.api_key || 'Awaiting Core Generation'}</code>
+                    <code className="bg-white/5 px-3 py-1.5 rounded-lg border border-white/10 text-[#9b5de5] select-all cursor-text transition-colors hover:bg-white/10 break-all max-w-full">{selectedClient.api_key || 'Awaiting Core Generation'}</code>
                   </div>
                 </div>
-                <div className="flex bg-white/[0.02] p-1 rounded-xl border border-white/[0.05] shrink-0">
-                  <button onClick={() => setActiveTab('chat')} className={`px-5 sm:px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all ${activeTab === 'chat' ? 'bg-gradient-to-r from-[#9b5de5] to-[#6c3b9c] text-white shadow-[0_0_20px_rgba(155,93,229,0.3)]' : 'text-[#8a80a0] hover:text-white hover:bg-white/[0.02]'}`}>Live Chat</button>
-                  <button onClick={() => setActiveTab('settings')} className={`px-5 sm:px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all ${activeTab === 'settings' ? 'bg-[#10b981] text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-[#8a80a0] hover:text-white hover:bg-white/[0.02]'}`}>Inspection</button>
-                  <button onClick={() => handleDeleteClient(selectedClient)} disabled={deletingId === selectedClient.id} className="px-5 sm:px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all text-[#8a80a0] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
+                <div className="flex flex-wrap w-full sm:w-auto bg-white/[0.02] p-1 rounded-xl border border-white/[0.05] sm:shrink-0">
+                  <button onClick={() => setActiveTab('chat')} className={`flex-1 sm:flex-none px-4 sm:px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all ${activeTab === 'chat' ? 'bg-gradient-to-r from-[#9b5de5] to-[#6c3b9c] text-white shadow-[0_0_20px_rgba(155,93,229,0.3)]' : 'text-[#8a80a0] hover:text-white hover:bg-white/[0.02]'}`}>Live Chat</button>
+                  <button onClick={() => setActiveTab('settings')} className={`flex-1 sm:flex-none px-4 sm:px-8 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all ${activeTab === 'settings' ? 'bg-[#10b981] text-black shadow-[0_0_20px_rgba(16,185,129,0.3)]' : 'text-[#8a80a0] hover:text-white hover:bg-white/[0.02]'}`}>Inspection</button>
+                  <button onClick={() => handleDeleteClient(selectedClient)} disabled={deletingId === selectedClient.id} className="flex-1 sm:flex-none px-4 sm:px-6 py-3 rounded-lg text-xs font-bold uppercase tracking-[0.2em] transition-all text-[#8a80a0] hover:text-red-400 hover:bg-red-500/10 disabled:opacity-50">
                     {deletingId === selectedClient.id ? '...' : 'Delete'}
                   </button>
                 </div>
@@ -1204,8 +1218,8 @@ export default function SupportDesk() {
             )}
 
             {activeTab === 'settings' && (
-              <div className="flex-1 p-5 sm:p-10 animate-[fadeIn_0.3s_ease-out] custom-scrollbar">
-                <div className="max-w-5xl mx-auto space-y-8 pb-20">
+              <div className="flex-1 p-4 sm:p-10 animate-[fadeIn_0.3s_ease-out] custom-scrollbar min-w-0 w-full overflow-x-hidden">
+                <div className="max-w-5xl mx-auto space-y-8 pb-20 min-w-0 w-full">
                   <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 sm:gap-8">
                     <div className="bg-black/40 border border-white/[0.08] rounded-3xl p-6 sm:p-8 backdrop-blur-md relative overflow-hidden group">
                       <div className="absolute top-0 right-0 w-32 h-32 bg-[#10b981]/10 rounded-bl-full pointer-events-none group-hover:scale-110 transition-transform duration-700"></div>
