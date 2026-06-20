@@ -175,25 +175,32 @@ export default function SupportDesk() {
     initializeAdmin()
   }, [router])
 
-  // On login, flag any client who messaged since the admin was last here, so the
-  // "New" badges appear immediately (web can't notify while logged out).
+  // On login, flag any client who messaged since the admin last OPENED that
+  // specific client's chat. Once you open a client, that client's badge is gone
+  // for good (we persist a per-client "seen" time), so it won't return next login.
   const scanLoginUnread = async (adminId: string) => {
     try {
-      const lastSeen = localStorage.getItem('promail_admin_inbox_seen')
-      const lastSeenTime = lastSeen ? new Date(lastSeen) : new Date(0)
       const { data: recent } = await supabase
         .from('support_messages')
         .select('sender_id, created_at')
-        .gt('created_at', lastSeenTime.toISOString())
         .order('created_at', { ascending: false })
-        .limit(500)
+        .limit(1000)
       if (recent && recent.length > 0) {
+        // newest client message time per sender
+        const newestBySender: Record<string, number> = {}
+        recent.forEach((m: any) => {
+          if (!m.sender_id || m.sender_id === adminId) return
+          const t = new Date(m.created_at).getTime()
+          if (!newestBySender[m.sender_id] || t > newestBySender[m.sender_id]) newestBySender[m.sender_id] = t
+        })
         const flags: Record<string, boolean> = {}
-        recent.forEach((m: any) => { if (m.sender_id && m.sender_id !== adminId) flags[m.sender_id] = true })
-        setUnreadClients(prev => ({ ...prev, ...flags }))
+        Object.entries(newestBySender).forEach(([sid, t]) => {
+          const seen = localStorage.getItem(`promail_seen_${sid}`)
+          const seenTime = seen ? new Date(seen).getTime() : 0
+          if (t > seenTime) flags[sid] = true   // unread only if newer than when we last opened them
+        })
+        setUnreadClients(flags)
       }
-      // mark "now" as seen so reopening the desk doesn't keep re-flagging
-      localStorage.setItem('promail_admin_inbox_seen', new Date().toISOString())
     } catch { /* localStorage / query issue — skip */ }
   }
 
@@ -509,8 +516,10 @@ export default function SupportDesk() {
       if (domains) setClientDomains(domains)
     }
     loadClientSpecifics()
-    // opening a client clears their unread flag
+    // opening a client clears their unread flag AND persists a "seen" marker so
+    // it never re-appears on the next login.
     setUnreadClients(prev => { const n = { ...prev }; delete n[selectedClient.id]; return n })
+    try { localStorage.setItem(`promail_seen_${selectedClient.id}`, new Date().toISOString()) } catch { /* ignore */ }
 
     const channel = supabase
       .channel('admin_support_chat')
@@ -771,8 +780,10 @@ export default function SupportDesk() {
         </div>
       )}
 
-      {/* ── SIDEBAR (network list) ── */}
-      <div className="w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex flex-col md:sticky md:top-0 md:h-screen z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]">
+      {/* ── SIDEBAR (network list) ──
+          On mobile: full-width, but HIDDEN once a client is selected (the panel
+          takes over full-screen with a Back button). On desktop: always visible. */}
+      <div className={`${selectedClient ? 'hidden md:flex' : 'flex'} w-full md:w-[380px] shrink-0 border-b md:border-b-0 md:border-r border-white/[0.08] bg-[#070512] flex-col md:sticky md:top-0 md:h-screen z-20 shadow-[20px_0_50px_rgba(0,0,0,0.5)]`}>
         <div className="p-5 sm:p-8 border-b border-white/[0.08] bg-black/40 shrink-0">
           <div className="flex justify-between items-start gap-3">
             <h1 className="font-['Syne',sans-serif] text-xl sm:text-2xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-[#9b5de5] to-[#10b981] tracking-tight">SUPPORT HQ</h1>
@@ -905,7 +916,49 @@ export default function SupportDesk() {
                   ) : filteredTxns.length === 0 ? (
                     <div className="bg-black/40 border border-white/[0.08] rounded-2xl py-16 text-center text-[#8a80a0] font-mono text-sm">No transactions match this view.</div>
                   ) : (
-                    <div className="bg-black/40 border border-white/[0.08] rounded-2xl overflow-hidden overflow-x-auto custom-scrollbar">
+                    <>
+                    {/* Mobile: stacked cards (no sideways scroll) */}
+                    <div className="md:hidden space-y-3">
+                      {filteredTxns.map(t => {
+                        const isPending = t.status === 'pending'
+                        const isDone = t.status === 'completed'
+                        return (
+                          <div key={t.id} className="bg-black/40 border border-white/[0.08] rounded-2xl p-4">
+                            <div className="flex justify-between items-start gap-3 mb-3">
+                              <div className="min-w-0">
+                                <div className="text-white font-bold text-sm truncate">{t.email}</div>
+                                <div className="text-[10px] text-[#8a80a0] uppercase tracking-widest mt-1">{t.type || '—'} · <span className="text-[#9b5de5]">{t.plan_id || '—'}</span></div>
+                              </div>
+                              <div className="text-right shrink-0">
+                                <div className="font-mono text-[#10b981] font-bold text-sm">{Number(t.amount).toFixed(2)}</div>
+                                <div className="text-[9px] text-[#10b981]/50">USDT</div>
+                              </div>
+                            </div>
+                            <div className="flex items-center justify-between gap-2">
+                              {isDone ? (
+                                <span className="text-[#10b981] bg-[#10b981]/10 border border-[#10b981]/30 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest">✓ Done</span>
+                              ) : isPending ? (
+                                <span className="text-[#f59e0b] bg-[#f59e0b]/10 border border-[#f59e0b]/30 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest">● Pending</span>
+                              ) : (
+                                <span className="text-red-400 bg-red-500/10 border border-red-500/30 px-3 py-1.5 rounded-lg text-[10px] font-bold uppercase tracking-widest capitalize">{t.status}</span>
+                              )}
+                              <div className="flex items-center gap-2">
+                                {isPending && (
+                                  <>
+                                    <button onClick={() => handleApproveTxn(t)} disabled={approvingId === t.txn_id} className="px-3 py-2 bg-[#10b981] text-black rounded-lg text-[10px] font-extrabold uppercase tracking-widest disabled:opacity-50">{approvingId === t.txn_id ? '...' : 'Approve'}</button>
+                                    <button onClick={() => handleRejectTxn(t)} disabled={approvingId === t.txn_id} className="px-3 py-2 bg-[#f59e0b]/15 text-[#f59e0b] border border-[#f59e0b]/30 rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-50">Reject</button>
+                                  </>
+                                )}
+                                <button onClick={() => handleDeleteTxn(t)} disabled={approvingId === t.txn_id} className="px-3 py-2 bg-red-500/10 text-red-400 border border-red-500/30 rounded-lg text-[10px] font-bold uppercase tracking-widest disabled:opacity-50">Del</button>
+                              </div>
+                            </div>
+                            <div className="text-[10px] text-[#8a80a0] font-mono mt-3">{t.created_at ? new Date(t.created_at).toLocaleString([], { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : '—'}</div>
+                          </div>
+                        )
+                      })}
+                    </div>
+                    {/* Desktop: full table */}
+                    <div className="hidden md:block bg-black/40 border border-white/[0.08] rounded-2xl overflow-hidden overflow-x-auto custom-scrollbar">
                       <table className="w-full text-left text-xs min-w-[760px]">
                         <thead className="bg-[#070512]">
                           <tr>
@@ -961,6 +1014,7 @@ export default function SupportDesk() {
                         </tbody>
                       </table>
                     </div>
+                    </>
                   )}
                 </div>
               ) : (
@@ -1033,6 +1087,9 @@ export default function SupportDesk() {
             <div className="p-5 sm:p-8 border-b border-white/[0.08] bg-black/40 backdrop-blur-xl flex flex-col gap-6 z-10 shadow-[0_20px_50px_rgba(0,0,0,0.5)] shrink-0">
               <div className="flex flex-col sm:flex-row sm:justify-between sm:items-start gap-4">
                 <div className="min-w-0">
+                  <button onClick={() => { setSelectedClient(null); setActiveTab('global') }} className="md:hidden mb-3 inline-flex items-center gap-2 text-[11px] font-bold uppercase tracking-widest text-[#9b5de5] bg-[#9b5de5]/10 border border-[#9b5de5]/30 px-4 py-2 rounded-lg">
+                    ‹ Back to list
+                  </button>
                   <h2 className="font-['Syne',sans-serif] font-bold text-xl sm:text-3xl tracking-tight truncate">{selectedClient.email}</h2>
                   <div className="text-[11px] font-mono text-[#8a80a0] mt-3 flex flex-wrap items-center gap-3">
                     <span className="uppercase tracking-widest font-bold opacity-50">API Identifier</span>
@@ -1231,7 +1288,24 @@ export default function SupportDesk() {
                               <span className="font-bold text-white font-mono text-base sm:text-lg break-all">{domain.domain_name}</span>
                               <span className={`px-4 py-1.5 border rounded-lg text-[10px] uppercase font-bold tracking-widest ${domain.status === 'active' ? 'bg-[#10b981]/10 text-[#10b981] border-[#10b981]/30' : 'bg-orange-500/10 text-orange-400 border-orange-500/30'}`}>{domain.status === 'active' ? 'Network Linked' : 'Awaiting Propagation'}</span>
                             </div>
-                            <div className="p-0 overflow-x-auto custom-scrollbar">
+                            {/* Mobile: stacked DNS cards (no sideways scroll) */}
+                            <div className="md:hidden p-4 space-y-3">
+                              {!domain.dns_records || domain.dns_records.length === 0 ? (
+                                <div className="text-center text-[#8a80a0] opacity-50 text-xs py-4">No DNS targets generated.</div>
+                              ) : (
+                                domain.dns_records.map((record: any, idx: number) => (
+                                  <div key={idx} className="bg-black/40 border border-white/[0.06] rounded-xl p-3 space-y-2">
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-[#9b5de5] bg-[#9b5de5]/10 px-2 py-1 rounded font-bold border border-[#9b5de5]/20 text-[10px]">{record.type}</span>
+                                      <span className="text-white font-bold break-all text-[11px]">{record.name}</span>
+                                    </div>
+                                    <div className="text-[#8a80a0] text-[10px] break-all select-all bg-white/[0.02] rounded px-2 py-1.5">{record.value}</div>
+                                  </div>
+                                ))
+                              )}
+                            </div>
+                            {/* Desktop: DNS table */}
+                            <div className="hidden md:block p-0 overflow-x-auto custom-scrollbar">
                               <table className="w-full text-left text-xs font-mono min-w-[500px]">
                                 <thead className="bg-[#070512]">
                                   <tr><th className="px-6 py-4 text-[#8a80a0] uppercase tracking-widest font-bold">Type</th><th className="px-6 py-4 text-[#8a80a0] uppercase tracking-widest font-bold">Host</th><th className="px-6 py-4 text-[#8a80a0] uppercase tracking-widest font-bold">Value</th></tr>
