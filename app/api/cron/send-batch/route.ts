@@ -62,10 +62,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ idle: true, message: 'No active jobs' }, { status: 200 })
     }
 
-    // 2. Load this job's sender profile once (billing/quota live on the profile)
+    // 2. Load this job's sender profile once (billing/quota live on the profile).
+    //    We read the PAYS/Test package fields too, so Test plans count correctly
+    //    (exactly like /api/send and what the desktop app displays).
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, active_plan_id, emails_sent')
+      .select('id, active_plan_id, emails_sent, pays_enabled, pays_total_quota, pays_daily_cap, pays_used_total, pays_used_today, pays_today_date, pays_expires_at')
       .eq('api_key', job.api_key)
       .single()
 
@@ -106,7 +108,18 @@ export async function POST(req: Request) {
     let failedThisRun = 0
     let emailsSent = profile.emails_sent || 0
 
-    // plan limit (read once)
+    // ── PAYS / Test package state (mutable across the batch) ──
+    // A client on a Test/PAYS package bills against the package quota, NOT a plan.
+    // This mirrors /api/send so the count moves and blocks identically.
+    const paysEnabled = !!profile.pays_enabled
+    const today = new Date().toISOString().slice(0, 10)
+    let paysUsedTotal = Number(profile.pays_used_total) || 0
+    let paysUsedToday = (profile.pays_today_date === today) ? (Number(profile.pays_used_today) || 0) : 0
+    const paysTotalQuota = Number(profile.pays_total_quota) || 0
+    const paysDailyCap = Number(profile.pays_daily_cap) || 0
+    const paysExpired = profile.pays_expires_at ? (new Date(profile.pays_expires_at).getTime() < Date.now()) : false
+
+    // plan limit (read once) — only used when NOT on a PAYS/Test package
     let planLimit = 0
     let overageCost = 0.006
     if (profile.active_plan_id) {
@@ -144,62 +157,97 @@ export async function POST(req: Request) {
           }
         }
 
-        // c) billing: plan room, else wallet overage
+        // c) billing — TWO modes, exactly like /api/send:
+        //    • PAYS/Test package  → bill against package quota + daily cap
+        //    • Regular plan       → plan room, else wallet overage
         let isOverage = false
+        let isPaysSend = false
+
         if (status === 'sent') {
-          let canSend = false
-          if (planLimit > 0 && emailsSent < planLimit) {
-            canSend = true
+          if (paysEnabled) {
+            // ----- PAYS / TEST PACKAGE PATH -----
+            if (paysExpired) {
+              status = 'failed'; errorLog = 'Test/package expired'
+            } else if (paysTotalQuota > 0 && paysUsedTotal >= paysTotalQuota) {
+              status = 'failed'; errorLog = 'Package allowance used up'
+            } else if (paysDailyCap > 0 && paysUsedToday >= paysDailyCap) {
+              status = 'failed'; errorLog = 'Daily cap reached for today'
+            } else {
+              isPaysSend = true
+            }
           } else {
-            const { data: wallet } = await supabaseAdmin
-              .from('wallets').select('balance').eq('user_id', profile.id).single()
-            if (wallet && Number(wallet.balance) >= overageCost) {
-              canSend = true; isOverage = true
+            // ----- REGULAR PLAN PATH -----
+            let canSend = false
+            if (planLimit > 0 && emailsSent < planLimit) {
+              canSend = true
+            } else {
+              const { data: wallet } = await supabaseAdmin
+                .from('wallets').select('balance').eq('user_id', profile.id).single()
+              if (wallet && Number(wallet.balance) >= overageCost) {
+                canSend = true; isOverage = true
+              }
+            }
+            if (!canSend) {
+              status = 'failed'
+              errorLog = 'Insufficient balance or plan limit reached'
             }
           }
-          if (!canSend) {
-            status = 'failed'
-            errorLog = 'Insufficient balance or plan limit reached'
-          } else {
-            // ---- actually send via Resend ----
-            const unsubUrl = buildUnsubUrl(r.email)
-            let html = fillMerge(job.html_body, r).split('{{unsubscribe_url}}').join(unsubUrl)
-            if (!/unsubscribe/i.test(html)) {
-              html += `<p style="font-size:12px;color:#888;margin-top:24px;">If you no longer wish to receive these emails, you can <a href="${unsubUrl}" style="color:#888;">unsubscribe here</a>.</p>`
-            }
-            const subject = fillMerge(job.subject, r)
+        }
 
-            const resp = await fetch('https://api.resend.com/emails', {
-              method: 'POST',
+        // d) actually send (only if still good to go)
+        if (status === 'sent') {
+          const unsubUrl = buildUnsubUrl(r.email)
+          let html = fillMerge(job.html_body, r).split('{{unsubscribe_url}}').join(unsubUrl)
+          if (!/unsubscribe/i.test(html)) {
+            html += `<p style="font-size:12px;color:#888;margin-top:24px;">If you no longer wish to receive these emails, you can <a href="${unsubUrl}" style="color:#888;">unsubscribe here</a>.</p>`
+          }
+          const subject = fillMerge(job.subject, r)
+
+          const resp = await fetch('https://api.resend.com/emails', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              from: `${job.from_name} <${job.from_email}>`,
+              to: [r.email],
+              subject,
+              html,
               headers: {
-                'Authorization': `Bearer ${process.env.RESEND_API_KEY}`,
-                'Content-Type': 'application/json',
+                'List-Unsubscribe': `<${unsubUrl}>`,
+                'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
               },
-              body: JSON.stringify({
-                from: `${job.from_name} <${job.from_email}>`,
-                to: [r.email],
-                subject,
-                html,
-                headers: {
-                  'List-Unsubscribe': `<${unsubUrl}>`,
-                  'List-Unsubscribe-Post': 'List-Unsubscribe=One-Click',
-                },
-              }),
-            })
+            }),
+          })
 
-            if (!resp.ok) {
-              const e = await resp.json().catch(() => ({}))
-              status = 'failed'
-              errorLog = (e && e.message) ? String(e.message).slice(0, 200) : `Resend error ${resp.status}`
+          if (!resp.ok) {
+            const e = await resp.json().catch(() => ({}))
+            status = 'failed'
+            errorLog = (e && e.message) ? String(e.message).slice(0, 200) : `Resend error ${resp.status}`
+          } else {
+            // ---- accounting on SUCCESS ----
+            // ALWAYS increment emails_sent (this is the single counter the desktop
+            // app, client dashboard and admin all read — for every plan type).
+            emailsSent += 1
+            if (isPaysSend) {
+              // Test/PAYS: also advance the package counters.
+              paysUsedTotal += 1
+              paysUsedToday += 1
+              await supabaseAdmin.from('profiles').update({
+                emails_sent: emailsSent,
+                pays_used_total: paysUsedTotal,
+                pays_used_today: paysUsedToday,
+                pays_today_date: today,
+              }).eq('id', profile.id)
+            } else if (isOverage) {
+              // Plan exhausted but wallet has balance: deduct overage + count it.
+              const { data: w } = await supabaseAdmin.from('wallets').select('balance').eq('user_id', profile.id).single()
+              if (w) await supabaseAdmin.from('wallets').update({ balance: Number(w.balance) - overageCost }).eq('user_id', profile.id)
+              await supabaseAdmin.from('profiles').update({ emails_sent: emailsSent }).eq('id', profile.id)
             } else {
-              // accounting: wallet deduct or plan increment
-              if (isOverage) {
-                const { data: w } = await supabaseAdmin.from('wallets').select('balance').eq('user_id', profile.id).single()
-                if (w) await supabaseAdmin.from('wallets').update({ balance: Number(w.balance) - overageCost }).eq('user_id', profile.id)
-              } else {
-                emailsSent += 1
-                await supabaseAdmin.from('profiles').update({ emails_sent: emailsSent }).eq('id', profile.id)
-              }
+              // Normal in-plan send.
+              await supabaseAdmin.from('profiles').update({ emails_sent: emailsSent }).eq('id', profile.id)
             }
           }
         }
