@@ -14,6 +14,10 @@ const INSERT_CHUNK = 1000
 // status='scheduled' + a scheduled_for time. The send-batch cron promotes it to
 // 'active' once that time has passed — so it fires even if the desktop app is closed.
 export async function POST(req: Request) {
+  // LIVE-BUILD MARKER: if you see this line in your Vercel logs after hitting
+  // Schedule Launch, you KNOW this exact file is the one running in production.
+  console.log('[SCHEDULE_ROUTE] LIVE build hit at', new Date().toISOString())
+
   try {
     // 1. Auth — same Bearer API key pattern as /api/campaign/launch
     const authHeader = req.headers.get('authorization')
@@ -30,7 +34,7 @@ export async function POST(req: Request) {
       html_body,
       from_email,
       from_name,
-      recipients, // [{ email, first_name, last_name }, ...]
+      recipients,    // [{ email, first_name, last_name }, ...]
       scheduled_for, // ISO timestamp string, e.g. "2026-07-01T14:30:00Z"
     } = body
 
@@ -41,7 +45,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No recipients provided' }, { status: 400 })
     }
 
-    // Validate the scheduled time — must be a real, future-ish timestamp.
+    // Validate the scheduled time — must be a real timestamp.
     const when = scheduled_for ? new Date(scheduled_for) : null
     if (!when || isNaN(when.getTime())) {
       return NextResponse.json({ error: 'Invalid or missing scheduled_for time' }, { status: 400 })
@@ -78,8 +82,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No valid recipients after cleaning' }, { status: 400 })
     }
 
-    // 5. Create the job row — but as 'scheduled', NOT active. The cron will
-    //    flip it to 'active' once scheduled_for has passed.
+    // 5. Create the job row — as 'scheduled', NOT active. The cron flips it to
+    //    'active' once scheduled_for has passed.
     const { data: job, error: jobError } = await supabaseAdmin
       .from('send_jobs')
       .insert({
@@ -98,12 +102,15 @@ export async function POST(req: Request) {
       .single()
 
     if (jobError || !job) {
-      console.error('schedule: job insert failed', jobError)
-      return NextResponse.json({ error: 'Could not create scheduled job' }, { status: 500 })
+      // Make the REAL reason loud so it shows up in Vercel logs AND in the response.
+      console.error('[SCHEDULE_ROUTE] job insert FAILED:', jobError)
+      return NextResponse.json(
+        { error: 'Could not create scheduled job', detail: jobError?.message || String(jobError) },
+        { status: 500 }
+      )
     }
 
     // 6. Insert all recipients as 'pending', in chunks so huge lists don't time out.
-    //    They just sit pending until the job is promoted to active.
     for (let i = 0; i < clean.length; i += INSERT_CHUNK) {
       const chunk = clean.slice(i, i + INSERT_CHUNK).map(r => ({
         job_id: job.id,
@@ -114,13 +121,18 @@ export async function POST(req: Request) {
       }))
       const { error: recErr } = await supabaseAdmin.from('send_recipients').insert(chunk)
       if (recErr) {
-        console.error('schedule: recipient chunk insert failed', recErr)
+        console.error('[SCHEDULE_ROUTE] recipient chunk insert FAILED:', recErr)
         await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
-        return NextResponse.json({ error: 'Failed while queueing recipients' }, { status: 500 })
+        return NextResponse.json(
+          { error: 'Failed while queueing recipients', detail: recErr.message },
+          { status: 500 }
+        )
       }
     }
 
-    // 7. Done — the server now owns the schedule. Fires on time, app open or not.
+    console.log('[SCHEDULE_ROUTE] created job', job.id, 'for', when.toISOString(), 'recipients', clean.length)
+
+    // 7. Done — the server now owns the schedule.
     return NextResponse.json({
       success: true,
       job_id: job.id,
@@ -130,7 +142,7 @@ export async function POST(req: Request) {
     }, { status: 200 })
 
   } catch (error: any) {
-    console.error('Campaign Schedule Error:', error)
-    return NextResponse.json({ error: 'Internal Server Error' }, { status: 500 })
+    console.error('[SCHEDULE_ROUTE] fatal error:', error)
+    return NextResponse.json({ error: 'Internal Server Error', detail: String(error?.message || error) }, { status: 500 })
   }
 }
