@@ -30,8 +30,6 @@ function buildUnsubUrl(email: string): string {
 }
 
 function fillMerge(text: string, r: any): string {
-  // Graceful fallbacks: a missing first name becomes "there" so the email reads
-  // "Hi there," instead of "Hi ,". Last name falls back to empty.
   const first = (r.first_name && String(r.first_name).trim()) ? String(r.first_name).trim() : 'there'
   const last = (r.last_name && String(r.last_name).trim()) ? String(r.last_name).trim() : ''
   return (text || '')
@@ -50,8 +48,7 @@ export async function POST(req: Request) {
 
   try {
     // 0.5 Promote any SCHEDULED jobs whose time has come → make them 'active'.
-    //     This is what lets scheduled campaigns fire even when the desktop app is
-    //     closed: the cron runs every minute on the server and flips due jobs on.
+    //     'held' jobs are intentionally NOT promoted (they await manual review).
     await supabaseAdmin
       .from('send_jobs')
       .update({ status: 'active', updated_at: new Date().toISOString() })
@@ -71,18 +68,28 @@ export async function POST(req: Request) {
       return NextResponse.json({ idle: true, message: 'No active jobs' }, { status: 200 })
     }
 
+    // 1.5 Hard stop: never drain a job the safety system blocked.
+    if ((job as any).risk_action === 'BLOCK') {
+      await supabaseAdmin.from('send_jobs').update({ status: 'blocked' }).eq('id', job.id)
+      return NextResponse.json({ skipped: true, reason: 'blocked by safety system', job_id: job.id }, { status: 200 })
+    }
+
     // 2. Load this job's sender profile once (billing/quota live on the profile).
-    //    We read the PAYS/Test package fields too, so Test plans count correctly
-    //    (exactly like /api/send and what the desktop app displays).
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, active_plan_id, emails_sent, pays_enabled, pays_total_quota, pays_daily_cap, pays_used_total, pays_used_today, pays_today_date, pays_expires_at')
+      .select('id, status, active_plan_id, emails_sent, pays_enabled, pays_total_quota, pays_daily_cap, pays_used_total, pays_used_today, pays_today_date, pays_expires_at')
       .eq('api_key', job.api_key)
       .single()
 
     if (!profile) {
       await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
       return NextResponse.json({ error: 'Job profile not found; paused' }, { status: 200 })
+    }
+
+    // 2.5 Tenant suspended (e.g. by the bounce/complaint webhook) → pause, don't send.
+    if ((profile as any).status === 'suspended') {
+      await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
+      return NextResponse.json({ skipped: true, reason: 'tenant suspended', job_id: job.id }, { status: 200 })
     }
 
     // 3. Pull a paced batch of pending recipients
@@ -96,7 +103,6 @@ export async function POST(req: Request) {
       .limit(batchSize)
 
     if (!batch || batch.length === 0) {
-      // Nothing left — finalize the job.
       await supabaseAdmin.from('send_jobs').update({ status: 'completed', updated_at: new Date().toISOString() }).eq('id', job.id)
       return NextResponse.json({ done: true, job_id: job.id }, { status: 200 })
     }
@@ -105,10 +111,17 @@ export async function POST(req: Request) {
     const domainPart = (job.from_email || '').split('@')[1]
     const { data: domainCheck } = await supabaseAdmin
       .from('client_domains')
-      .select('status')
+      .select('id, status, sent_count')
       .eq('user_id', profile.id)
       .eq('domain_name', domainPart)
       .single()
+
+    // 4.5 Domain suspended by the webhook → pause this job (don't fail every row
+    //     with a misleading "not verified" message).
+    if (domainCheck && domainCheck.status === 'suspended') {
+      await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
+      return NextResponse.json({ skipped: true, reason: 'domain suspended', job_id: job.id }, { status: 200 })
+    }
 
     const domainOk = domainCheck && domainCheck.status === 'active'
 
@@ -118,8 +131,6 @@ export async function POST(req: Request) {
     let emailsSent = profile.emails_sent || 0
 
     // ── PAYS / Test package state (mutable across the batch) ──
-    // A client on a Test/PAYS package bills against the package quota, NOT a plan.
-    // This mirrors /api/send so the count moves and blocks identically.
     const paysEnabled = !!profile.pays_enabled
     const today = new Date().toISOString().slice(0, 10)
     let paysUsedTotal = Number(profile.pays_used_total) || 0
@@ -148,15 +159,21 @@ export async function POST(req: Request) {
       let errorLog: string | null = null
 
       try {
-        // ---- per-recipient checks (the part Resend can't do) ----
-
         // a) domain must be verified
         if (!domainOk) {
           status = 'failed'
           errorLog = `Domain ${domainPart} not verified`
         }
 
-        // b) skip if this contact is unsubscribed in our system
+        // b) skip if this address is suppressed (bounce/complaint) OR unsubscribed
+        if (status === 'sent') {
+          const { data: sup } = await supabaseAdmin
+            .from('suppression_list').select('id').eq('email', r.email).maybeSingle()
+          if (sup) {
+            status = 'unsubscribed'
+            errorLog = 'Suppressed (bounce/complaint/unsubscribe)'
+          }
+        }
         if (status === 'sent') {
           const { data: contactRow } = await supabaseAdmin
             .from('contacts').select('status').eq('email', r.email).maybeSingle()
@@ -166,15 +183,12 @@ export async function POST(req: Request) {
           }
         }
 
-        // c) billing — TWO modes, exactly like /api/send:
-        //    • PAYS/Test package  → bill against package quota + daily cap
-        //    • Regular plan       → plan room, else wallet overage
+        // c) billing — TWO modes, exactly like /api/send
         let isOverage = false
         let isPaysSend = false
 
         if (status === 'sent') {
           if (paysEnabled) {
-            // ----- PAYS / TEST PACKAGE PATH -----
             if (paysExpired) {
               status = 'failed'; errorLog = 'Test/package expired'
             } else if (paysTotalQuota > 0 && paysUsedTotal >= paysTotalQuota) {
@@ -185,7 +199,6 @@ export async function POST(req: Request) {
               isPaysSend = true
             }
           } else {
-            // ----- REGULAR PLAN PATH -----
             let canSend = false
             if (planLimit > 0 && emailsSent < planLimit) {
               canSend = true
@@ -235,12 +248,8 @@ export async function POST(req: Request) {
             status = 'failed'
             errorLog = (e && e.message) ? String(e.message).slice(0, 200) : `Resend error ${resp.status}`
           } else {
-            // ---- accounting on SUCCESS ----
-            // ALWAYS increment emails_sent (this is the single counter the desktop
-            // app, client dashboard and admin all read — for every plan type).
             emailsSent += 1
             if (isPaysSend) {
-              // Test/PAYS: also advance the package counters.
               paysUsedTotal += 1
               paysUsedToday += 1
               await supabaseAdmin.from('profiles').update({
@@ -250,12 +259,10 @@ export async function POST(req: Request) {
                 pays_today_date: today,
               }).eq('id', profile.id)
             } else if (isOverage) {
-              // Plan exhausted but wallet has balance: deduct overage + count it.
               const { data: w } = await supabaseAdmin.from('wallets').select('balance').eq('user_id', profile.id).single()
               if (w) await supabaseAdmin.from('wallets').update({ balance: Number(w.balance) - overageCost }).eq('user_id', profile.id)
               await supabaseAdmin.from('profiles').update({ emails_sent: emailsSent }).eq('id', profile.id)
             } else {
-              // Normal in-plan send.
               await supabaseAdmin.from('profiles').update({ emails_sent: emailsSent }).eq('id', profile.id)
             }
           }
@@ -275,7 +282,6 @@ export async function POST(req: Request) {
 
       if (status === 'sent') sentThisRun += 1
       else if (status === 'failed') failedThisRun += 1
-      // 'unsubscribed' is neither a success nor a hard failure for counts
 
       // gentle in-batch spacing so we never burst
       await sleep(250)
@@ -287,6 +293,13 @@ export async function POST(req: Request) {
       failed_count: (job.failed_count || 0) + failedThisRun,
       updated_at: new Date().toISOString(),
     }).eq('id', job.id)
+
+    // 5.5 Advance the domain's lifetime sent_count (powers webhook bounce/complaint rates).
+    if (domainCheck && sentThisRun > 0) {
+      await supabaseAdmin.from('client_domains').update({
+        sent_count: (domainCheck.sent_count || 0) + sentThisRun,
+      }).eq('id', domainCheck.id)
+    }
 
     // 6. If no pending remain, complete the job
     const { count } = await supabaseAdmin

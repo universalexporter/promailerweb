@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { scoreEmail } from '@/lib/risk-engine'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -68,7 +69,23 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No valid recipients after cleaning' }, { status: 400 })
     }
 
-    // 5. Create the job row
+    // 4.5 SAFETY GATE — score ONCE, before anything is queued.
+    //     BLOCK (>=80 or phishing/scam/impersonation/illegal) → refuse, queue nothing.
+    //     REQUIRE_REVIEW (60-79) → store as 'held' so the cron never drains it.
+    //     WARN/ALLOW → queue as 'active' and record the verdict on the job.
+    const risk = await scoreEmail({ subject, html_body, from_email, from_name, recipients: clean, userId, supabaseAdmin })
+    if (risk.action === 'BLOCK') {
+      return NextResponse.json({
+        error: 'Campaign blocked by safety system',
+        classification: risk.classification,
+        risk_score: risk.risk_score,
+        risk_level: risk.risk_level,
+        reasons: risk.reasons,
+      }, { status: 403 })
+    }
+    const jobStatus = risk.action === 'REQUIRE_REVIEW' ? 'held' : 'active'
+
+    // 5. Create the job row (carries its risk verdict)
     const { data: job, error: jobError } = await supabaseAdmin
       .from('send_jobs')
       .insert({
@@ -79,8 +96,13 @@ export async function POST(req: Request) {
         html_body,
         from_email,
         from_name: from_name || '',
-        status: 'active',
+        status: jobStatus,
         total_count: clean.length,
+        risk_score: risk.risk_score,
+        risk_level: risk.risk_level,
+        risk_action: risk.action,
+        classification: risk.classification,
+        risk_reasons: risk.reasons,
       })
       .select('id')
       .single()
@@ -108,12 +130,19 @@ export async function POST(req: Request) {
       }
     }
 
-    // 7. Return instantly — the app's send now "feels" done; the cron drains it slowly.
+    // 7. Return — include the safety verdict so the app can warn the user.
     return NextResponse.json({
       success: true,
       job_id: job.id,
       queued: clean.length,
-      message: 'Campaign queued. Server will deliver at a safe pace.',
+      held: jobStatus === 'held',
+      risk_score: risk.risk_score,
+      risk_level: risk.risk_level,
+      risk_action: risk.action,
+      reasons: risk.reasons,
+      message: jobStatus === 'held'
+        ? 'Campaign held for review (elevated risk).'
+        : 'Campaign queued. Server will deliver at a safe pace.',
     }, { status: 200 })
 
   } catch (error: any) {

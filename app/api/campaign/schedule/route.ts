@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { createClient } from '@supabase/supabase-js'
+import { scoreEmail } from '@/lib/risk-engine'
 
 const supabaseAdmin = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL!,
@@ -14,8 +15,6 @@ const INSERT_CHUNK = 1000
 // status='scheduled' + a scheduled_for time. The send-batch cron promotes it to
 // 'active' once that time has passed — so it fires even if the desktop app is closed.
 export async function POST(req: Request) {
-  // LIVE-BUILD MARKER: if you see this line in your Vercel logs after hitting
-  // Schedule Launch, you KNOW this exact file is the one running in production.
   console.log('[SCHEDULE_ROUTE] LIVE build hit at', new Date().toISOString())
 
   try {
@@ -82,8 +81,22 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No valid recipients after cleaning' }, { status: 400 })
     }
 
-    // 5. Create the job row — as 'scheduled', NOT active. The cron flips it to
-    //    'active' once scheduled_for has passed.
+    // 4.5 SAFETY GATE — score before scheduling. Same rules as launch.
+    const risk = await scoreEmail({ subject, html_body, from_email, from_name, recipients: clean, userId, supabaseAdmin })
+    if (risk.action === 'BLOCK') {
+      return NextResponse.json({
+        error: 'Campaign blocked by safety system',
+        classification: risk.classification,
+        risk_score: risk.risk_score,
+        risk_level: risk.risk_level,
+        reasons: risk.reasons,
+      }, { status: 403 })
+    }
+    // REQUIRE_REVIEW → 'held' (cron never promotes it). Otherwise normal 'scheduled'.
+    const jobStatus = risk.action === 'REQUIRE_REVIEW' ? 'held' : 'scheduled'
+
+    // 5. Create the job row — as 'scheduled' (or 'held'), NOT active. The cron flips
+    //    'scheduled' → 'active' once scheduled_for has passed.
     const { data: job, error: jobError } = await supabaseAdmin
       .from('send_jobs')
       .insert({
@@ -94,15 +107,19 @@ export async function POST(req: Request) {
         html_body,
         from_email,
         from_name: from_name || '',
-        status: 'scheduled',
+        status: jobStatus,
         scheduled_for: when.toISOString(),
         total_count: clean.length,
+        risk_score: risk.risk_score,
+        risk_level: risk.risk_level,
+        risk_action: risk.action,
+        classification: risk.classification,
+        risk_reasons: risk.reasons,
       })
       .select('id')
       .single()
 
     if (jobError || !job) {
-      // Make the REAL reason loud so it shows up in Vercel logs AND in the response.
       console.error('[SCHEDULE_ROUTE] job insert FAILED:', jobError)
       return NextResponse.json(
         { error: 'Could not create scheduled job', detail: jobError?.message || String(jobError) },
@@ -137,8 +154,15 @@ export async function POST(req: Request) {
       success: true,
       job_id: job.id,
       queued: clean.length,
+      held: jobStatus === 'held',
       scheduled_for: when.toISOString(),
-      message: 'Campaign scheduled. Server will deliver at the chosen time.',
+      risk_score: risk.risk_score,
+      risk_level: risk.risk_level,
+      risk_action: risk.action,
+      reasons: risk.reasons,
+      message: jobStatus === 'held'
+        ? 'Campaign held for review (elevated risk).'
+        : 'Campaign scheduled. Server will deliver at the chosen time.',
     }, { status: 200 })
 
   } catch (error: any) {
