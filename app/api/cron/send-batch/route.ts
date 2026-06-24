@@ -20,7 +20,6 @@ function batchSizeFor(total: number): number {
 
 const sleep = (ms: number) => new Promise(res => setTimeout(res, ms))
 
-// Per-recipient unsubscribe link (same scheme as /api/send)
 function buildUnsubUrl(email: string): string {
   const secret = process.env.UNSUB_SECRET || ''
   const sig = crypto.createHmac('sha256', secret).update(email).digest('hex').slice(0, 32)
@@ -68,7 +67,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ idle: true, message: 'No active jobs' }, { status: 200 })
     }
 
-    // 1.5 Hard stop: never drain a job the safety system blocked.
+    // 1.5 Hard stop: never drain a job whose CONTENT was flagged as spam/phishing.
+    //     This is the only block — it stops bad EMAILS, not domains.
     if ((job as any).risk_action === 'BLOCK') {
       await supabaseAdmin.from('send_jobs').update({ status: 'blocked' }).eq('id', job.id)
       return NextResponse.json({ skipped: true, reason: 'blocked by safety system', job_id: job.id }, { status: 200 })
@@ -77,19 +77,13 @@ export async function POST(req: Request) {
     // 2. Load this job's sender profile once (billing/quota live on the profile).
     const { data: profile } = await supabaseAdmin
       .from('profiles')
-      .select('id, status, active_plan_id, emails_sent, pays_enabled, pays_total_quota, pays_daily_cap, pays_used_total, pays_used_today, pays_today_date, pays_expires_at')
+      .select('id, active_plan_id, emails_sent, pays_enabled, pays_total_quota, pays_daily_cap, pays_used_total, pays_used_today, pays_today_date, pays_expires_at')
       .eq('api_key', job.api_key)
       .single()
 
     if (!profile) {
       await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
       return NextResponse.json({ error: 'Job profile not found; paused' }, { status: 200 })
-    }
-
-    // 2.5 Tenant suspended (e.g. by the bounce/complaint webhook) → pause, don't send.
-    if ((profile as any).status === 'suspended') {
-      await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
-      return NextResponse.json({ skipped: true, reason: 'tenant suspended', job_id: job.id }, { status: 200 })
     }
 
     // 3. Pull a paced batch of pending recipients
@@ -107,7 +101,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ done: true, job_id: job.id }, { status: 200 })
     }
 
-    // 4. Domain check once per batch (same rule as /api/send)
+    // 4. Domain check once per batch (same rule as /api/send). We read sent_count so
+    //    we can advance it for the reputation number — but verified domains send freely.
     const domainPart = (job.from_email || '').split('@')[1]
     const { data: domainCheck } = await supabaseAdmin
       .from('client_domains')
@@ -115,13 +110,6 @@ export async function POST(req: Request) {
       .eq('user_id', profile.id)
       .eq('domain_name', domainPart)
       .single()
-
-    // 4.5 Domain suspended by the webhook → pause this job (don't fail every row
-    //     with a misleading "not verified" message).
-    if (domainCheck && domainCheck.status === 'suspended') {
-      await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
-      return NextResponse.json({ skipped: true, reason: 'domain suspended', job_id: job.id }, { status: 200 })
-    }
 
     const domainOk = domainCheck && domainCheck.status === 'active'
 
@@ -165,7 +153,8 @@ export async function POST(req: Request) {
           errorLog = `Domain ${domainPart} not verified`
         }
 
-        // b) skip if this address is suppressed (bounce/complaint) OR unsubscribed
+        // b) skip if this address is suppressed (bounce/complaint) OR unsubscribed.
+        //    This is per-ADDRESS protection — it never stops the rest of the send.
         if (status === 'sent') {
           const { data: sup } = await supabaseAdmin
             .from('suppression_list').select('id').eq('email', r.email).maybeSingle()
@@ -294,7 +283,7 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString(),
     }).eq('id', job.id)
 
-    // 5.5 Advance the domain's lifetime sent_count (powers webhook bounce/complaint rates).
+    // 5.5 Advance the domain's lifetime sent_count (used only for the reputation %).
     if (domainCheck && sentThisRun > 0) {
       await supabaseAdmin.from('client_domains').update({
         sent_count: (domainCheck.sent_count || 0) + sentThisRun,

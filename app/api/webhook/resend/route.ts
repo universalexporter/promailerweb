@@ -41,20 +41,14 @@ function toEmails(to: any): string[] {
   return []
 }
 
+// Suppress a single bad address so NOBODY re-emails it. This protects everyone's
+// deliverability and is the only enforcement here — domains are never blocked.
 async function suppress(email: string, reason: string, source: string, userId: string | null) {
   const { data: existing } = await supabaseAdmin
     .from('suppression_list').select('id').eq('email', email).maybeSingle()
   if (!existing) {
     await supabaseAdmin.from('suppression_list').insert({ email, reason, source, user_id: userId })
   }
-}
-
-async function pauseDomainJobs(userId: string, domain: string) {
-  await supabaseAdmin.from('send_jobs')
-    .update({ status: 'paused' })
-    .eq('user_id', userId)
-    .in('status', ['active', 'scheduled'])
-    .ilike('from_email', `%@${domain}`)
 }
 
 export async function POST(req: Request) {
@@ -82,7 +76,7 @@ export async function POST(req: Request) {
     if (domain) {
       const { data: dom } = await supabaseAdmin
         .from('client_domains')
-        .select('id, user_id, status, sent_count, bounce_count, complaint_count, reputation_score')
+        .select('id, user_id, bounce_count, complaint_count, reputation_score')
         .eq('domain_name', domain)
         .maybeSingle()
       if (dom) { domainRow = dom; userId = dom.user_id }
@@ -93,57 +87,32 @@ export async function POST(req: Request) {
       const bounceType = String(data?.bounce?.type || data?.type || '').toLowerCase()
       const isHard = bounceType.includes('hard') || bounceType === 'permanent'
 
+      // Hard bounce → suppress that address only. Soft bounce → leave it (retryable).
       if (isHard) {
         for (const em of recipients) await suppress(em, 'hard_bounce', 'resend', userId)
-      }
 
-      if (domainRow && isHard) {
-        const bounceCount = (domainRow.bounce_count || 0) + 1
-        const sent = domainRow.sent_count || 0
-        const rep = Math.max(0, (domainRow.reputation_score ?? 100) - 2)
-        await supabaseAdmin.from('client_domains').update({
-          bounce_count: bounceCount,
-          reputation_score: rep,
-          last_event_at: new Date().toISOString(),
-        }).eq('id', domainRow.id)
-
-        if (sent >= 50 && userId) {
-          const rate = bounceCount / sent
-          if (rate >= 0.10) {
-            await supabaseAdmin.from('profiles').update({ status: 'suspended' }).eq('id', userId)
-            console.warn(`[RESEND_WEBHOOK] tenant ${userId} suspended — bounce ${(rate * 100).toFixed(1)}%`)
-          } else if (rate >= 0.08) {
-            await pauseDomainJobs(userId, domain)
-            console.warn(`[RESEND_WEBHOOK] domain ${domain} jobs paused — bounce ${(rate * 100).toFixed(1)}%`)
-          }
+        // Reputation is informational only — a warning number, NOT a send block.
+        if (domainRow) {
+          await supabaseAdmin.from('client_domains').update({
+            bounce_count: (domainRow.bounce_count || 0) + 1,
+            reputation_score: Math.max(0, (domainRow.reputation_score ?? 100) - 2),
+            last_event_at: new Date().toISOString(),
+          }).eq('id', domainRow.id)
         }
       }
     }
 
     // ───────────── COMPLAINT ─────────────
     else if (type === 'email.complained') {
+      // Complaint → always suppress that address (they hit "spam"). Never block domain.
       for (const em of recipients) await suppress(em, 'complaint', 'resend', userId)
 
       if (domainRow) {
-        const complaintCount = (domainRow.complaint_count || 0) + 1
-        const sent = domainRow.sent_count || 0
-        const rep = Math.max(0, (domainRow.reputation_score ?? 100) - 10)
         await supabaseAdmin.from('client_domains').update({
-          complaint_count: complaintCount,
-          reputation_score: rep,
+          complaint_count: (domainRow.complaint_count || 0) + 1,
+          reputation_score: Math.max(0, (domainRow.reputation_score ?? 100) - 10),
           last_event_at: new Date().toISOString(),
         }).eq('id', domainRow.id)
-
-        if (sent >= 50 && userId) {
-          const rate = complaintCount / sent
-          if (rate >= 0.01) {
-            await supabaseAdmin.from('profiles').update({ status: 'suspended' }).eq('id', userId)
-            console.warn(`[RESEND_WEBHOOK] tenant ${userId} suspended — complaint ${(rate * 100).toFixed(2)}%`)
-          } else if (rate >= 0.005) {
-            await supabaseAdmin.from('client_domains').update({ status: 'suspended' }).eq('id', domainRow.id)
-            console.warn(`[RESEND_WEBHOOK] domain ${domain} suspended — complaint ${(rate * 100).toFixed(2)}%`)
-          }
-        }
       }
     }
 
