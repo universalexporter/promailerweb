@@ -69,10 +69,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No valid recipients after cleaning' }, { status: 400 })
     }
 
-    // 4.5 SAFETY GATE — score ONCE, before anything is queued.
-    //     BLOCK (>=80 or phishing/scam/impersonation/illegal) → refuse, queue nothing.
-    //     REQUIRE_REVIEW (60-79) → store as 'held' so the cron never drains it.
-    //     WARN/ALLOW → queue as 'active' and record the verdict on the job.
+    // 4.5 SAFETY GATE — score ONCE before queueing.
+    //     ONLY true spam/phishing/scam (BLOCK) is refused. Everything else SENDS;
+    //     borderline scores just carry a warning the app shows the user.
     const risk = await scoreEmail({ subject, html_body, from_email, from_name, recipients: clean, userId, supabaseAdmin })
     if (risk.action === 'BLOCK') {
       return NextResponse.json({
@@ -83,9 +82,8 @@ export async function POST(req: Request) {
         reasons: risk.reasons,
       }, { status: 403 })
     }
-    const jobStatus = risk.action === 'REQUIRE_REVIEW' ? 'held' : 'active'
 
-    // 5. Create the job row (carries its risk verdict)
+    // 5. Create the job row — always 'active' (we send). Verdict is recorded for warnings.
     const { data: job, error: jobError } = await supabaseAdmin
       .from('send_jobs')
       .insert({
@@ -96,7 +94,7 @@ export async function POST(req: Request) {
         html_body,
         from_email,
         from_name: from_name || '',
-        status: jobStatus,
+        status: 'active',
         total_count: clean.length,
         risk_score: risk.risk_score,
         risk_level: risk.risk_level,
@@ -124,7 +122,6 @@ export async function POST(req: Request) {
       const { error: recErr } = await supabaseAdmin.from('send_recipients').insert(chunk)
       if (recErr) {
         console.error('launch: recipient chunk insert failed', recErr)
-        // Mark the job paused so a half-loaded job doesn't silently send partials
         await supabaseAdmin.from('send_jobs').update({ status: 'paused' }).eq('id', job.id)
         return NextResponse.json({ error: 'Failed while queueing recipients' }, { status: 500 })
       }
@@ -135,14 +132,11 @@ export async function POST(req: Request) {
       success: true,
       job_id: job.id,
       queued: clean.length,
-      held: jobStatus === 'held',
       risk_score: risk.risk_score,
       risk_level: risk.risk_level,
       risk_action: risk.action,
       reasons: risk.reasons,
-      message: jobStatus === 'held'
-        ? 'Campaign held for review (elevated risk).'
-        : 'Campaign queued. Server will deliver at a safe pace.',
+      message: 'Campaign queued. Server will deliver at a safe pace.',
     }, { status: 200 })
 
   } catch (error: any) {

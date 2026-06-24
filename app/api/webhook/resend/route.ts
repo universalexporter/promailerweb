@@ -41,14 +41,23 @@ function toEmails(to: any): string[] {
   return []
 }
 
-// Suppress a single bad address so NOBODY re-emails it. This protects everyone's
-// deliverability and is the only enforcement here — domains are never blocked.
 async function suppress(email: string, reason: string, source: string, userId: string | null) {
   const { data: existing } = await supabaseAdmin
     .from('suppression_list').select('id').eq('email', email).maybeSingle()
   if (!existing) {
     await supabaseAdmin.from('suppression_list').insert({ email, reason, source, user_id: userId })
   }
+}
+
+// Pull a short human reason out of whatever the event carries.
+function reasonFor(type: string, data: any): string | null {
+  try {
+    if (type === 'email.bounced') return String(data?.bounce?.message || data?.bounce?.type || 'bounced').slice(0, 300)
+    if (type === 'email.complained') return 'spam complaint'
+    if (type === 'email.clicked') return String(data?.click?.link || data?.click?.url || '').slice(0, 500) || null
+    if (type === 'email.delivery_delayed') return String(data?.delivery_delayed?.message || 'delayed').slice(0, 300)
+  } catch { /* ignore */ }
+  return null
 }
 
 export async function POST(req: Request) {
@@ -69,8 +78,13 @@ export async function POST(req: Request) {
   const data: any = evt?.data || {}
   const domain = domainOf(data?.from || '')
   const recipients = toEmails(data?.to)
+  const resendId: string | null = data?.email_id ? String(data.email_id) : null
 
   try {
+    // ── Resolve which tenant this belongs to ──
+    // Primary: by the sending domain. Fallback: by the Resend message id we stored
+    // on send_recipients at send time (so attribution still works if the domain
+    // isn't in the ledger for some reason).
     let userId: string | null = null
     let domainRow: any = null
     if (domain) {
@@ -81,17 +95,44 @@ export async function POST(req: Request) {
         .maybeSingle()
       if (dom) { domainRow = dom; userId = dom.user_id }
     }
+    if (!userId && resendId) {
+      const { data: rec } = await supabaseAdmin
+        .from('send_recipients').select('job_id').eq('resend_id', resendId).maybeSingle()
+      if (rec?.job_id) {
+        const { data: jb } = await supabaseAdmin
+          .from('send_jobs').select('user_id').eq('id', rec.job_id).maybeSingle()
+        if (jb?.user_id) userId = jb.user_id
+      }
+    }
 
-    // ───────────── BOUNCE ─────────────
+    // ── 1. STORE THE EVENT (every email.* type) ──
+    if (type.startsWith('email.')) {
+      const eventType = type.slice('email.'.length)  // delivered | opened | bounced | ...
+      const email = recipients[0] || null
+      const subject = data?.subject ? String(data.subject).slice(0, 500) : null
+      const fromEmail = data?.from ? String(data.from).slice(0, 300) : null
+      const reason = reasonFor(type, data)
+      try {
+        await supabaseAdmin.from('email_events').insert({
+          user_id: userId,
+          resend_id: resendId,
+          email,
+          event_type: eventType,
+          subject,
+          from_email: fromEmail,
+          reason,
+        })
+      } catch (e) {
+        console.error('[RESEND_WEBHOOK] event insert failed', e)
+      }
+    }
+
+    // ── 2. BOUNCE: suppress the address; nudge reputation (never block domain) ──
     if (type === 'email.bounced') {
       const bounceType = String(data?.bounce?.type || data?.type || '').toLowerCase()
       const isHard = bounceType.includes('hard') || bounceType === 'permanent'
-
-      // Hard bounce → suppress that address only. Soft bounce → leave it (retryable).
       if (isHard) {
         for (const em of recipients) await suppress(em, 'hard_bounce', 'resend', userId)
-
-        // Reputation is informational only — a warning number, NOT a send block.
         if (domainRow) {
           await supabaseAdmin.from('client_domains').update({
             bounce_count: (domainRow.bounce_count || 0) + 1,
@@ -102,11 +143,9 @@ export async function POST(req: Request) {
       }
     }
 
-    // ───────────── COMPLAINT ─────────────
+    // ── 3. COMPLAINT: always suppress; nudge reputation (never block domain) ──
     else if (type === 'email.complained') {
-      // Complaint → always suppress that address (they hit "spam"). Never block domain.
       for (const em of recipients) await suppress(em, 'complaint', 'resend', userId)
-
       if (domainRow) {
         await supabaseAdmin.from('client_domains').update({
           complaint_count: (domainRow.complaint_count || 0) + 1,

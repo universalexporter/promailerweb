@@ -47,7 +47,6 @@ export async function POST(req: Request) {
 
   try {
     // 0.5 Promote any SCHEDULED jobs whose time has come → make them 'active'.
-    //     'held' jobs are intentionally NOT promoted (they await manual review).
     await supabaseAdmin
       .from('send_jobs')
       .update({ status: 'active', updated_at: new Date().toISOString() })
@@ -68,7 +67,6 @@ export async function POST(req: Request) {
     }
 
     // 1.5 Hard stop: never drain a job whose CONTENT was flagged as spam/phishing.
-    //     This is the only block — it stops bad EMAILS, not domains.
     if ((job as any).risk_action === 'BLOCK') {
       await supabaseAdmin.from('send_jobs').update({ status: 'blocked' }).eq('id', job.id)
       return NextResponse.json({ skipped: true, reason: 'blocked by safety system', job_id: job.id }, { status: 200 })
@@ -101,8 +99,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ done: true, job_id: job.id }, { status: 200 })
     }
 
-    // 4. Domain check once per batch (same rule as /api/send). We read sent_count so
-    //    we can advance it for the reputation number — but verified domains send freely.
+    // 4. Domain check once per batch (same rule as /api/send)
     const domainPart = (job.from_email || '').split('@')[1]
     const { data: domainCheck } = await supabaseAdmin
       .from('client_domains')
@@ -145,6 +142,7 @@ export async function POST(req: Request) {
     for (const r of batch) {
       let status = 'sent'
       let errorLog: string | null = null
+      let resendId: string | null = null   // Resend's message id, saved for event tracking
 
       try {
         // a) domain must be verified
@@ -153,8 +151,7 @@ export async function POST(req: Request) {
           errorLog = `Domain ${domainPart} not verified`
         }
 
-        // b) skip if this address is suppressed (bounce/complaint) OR unsubscribed.
-        //    This is per-ADDRESS protection — it never stops the rest of the send.
+        // b) skip if this address is suppressed (bounce/complaint) OR unsubscribed
         if (status === 'sent') {
           const { data: sup } = await supabaseAdmin
             .from('suppression_list').select('id').eq('email', r.email).maybeSingle()
@@ -237,6 +234,12 @@ export async function POST(req: Request) {
             status = 'failed'
             errorLog = (e && e.message) ? String(e.message).slice(0, 200) : `Resend error ${resp.status}`
           } else {
+            // Capture Resend's message id so webhook events link back to this mail.
+            try {
+              const sd = await resp.json()
+              resendId = (sd && sd.id) ? String(sd.id) : null
+            } catch { /* ignore — id just won't be stored */ }
+
             emailsSent += 1
             if (isPaysSend) {
               paysUsedTotal += 1
@@ -261,12 +264,13 @@ export async function POST(req: Request) {
         errorLog = `Send fault: ${String(err).slice(0, 150)}`
       }
 
-      // mark the recipient row
+      // mark the recipient row (now also storing Resend's message id when present)
       await supabaseAdmin.from('send_recipients').update({
         status,
         error_log: errorLog,
         attempts: (r.attempts || 0) + 1,
         processed_at: new Date().toISOString(),
+        resend_id: resendId,
       }).eq('id', r.id)
 
       if (status === 'sent') sentThisRun += 1
@@ -283,7 +287,7 @@ export async function POST(req: Request) {
       updated_at: new Date().toISOString(),
     }).eq('id', job.id)
 
-    // 5.5 Advance the domain's lifetime sent_count (used only for the reputation %).
+    // 5.5 Advance the domain's lifetime sent_count (powers reputation %).
     if (domainCheck && sentThisRun > 0) {
       await supabaseAdmin.from('client_domains').update({
         sent_count: (domainCheck.sent_count || 0) + sentThisRun,

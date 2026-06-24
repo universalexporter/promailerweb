@@ -81,7 +81,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: 'No valid recipients after cleaning' }, { status: 400 })
     }
 
-    // 4.5 SAFETY GATE — score before scheduling. Same rules as launch.
+    // 4.5 SAFETY GATE — score before scheduling. ONLY true spam (BLOCK) is refused;
+    //     everything else schedules normally and carries a warning verdict.
     const risk = await scoreEmail({ subject, html_body, from_email, from_name, recipients: clean, userId, supabaseAdmin })
     if (risk.action === 'BLOCK') {
       return NextResponse.json({
@@ -92,11 +93,9 @@ export async function POST(req: Request) {
         reasons: risk.reasons,
       }, { status: 403 })
     }
-    // REQUIRE_REVIEW → 'held' (cron never promotes it). Otherwise normal 'scheduled'.
-    const jobStatus = risk.action === 'REQUIRE_REVIEW' ? 'held' : 'scheduled'
 
-    // 5. Create the job row — as 'scheduled' (or 'held'), NOT active. The cron flips
-    //    'scheduled' → 'active' once scheduled_for has passed.
+    // 5. Create the job row — as 'scheduled'. The cron flips it to 'active' once
+    //    scheduled_for has passed.
     const { data: job, error: jobError } = await supabaseAdmin
       .from('send_jobs')
       .insert({
@@ -107,7 +106,7 @@ export async function POST(req: Request) {
         html_body,
         from_email,
         from_name: from_name || '',
-        status: jobStatus,
+        status: 'scheduled',
         scheduled_for: when.toISOString(),
         total_count: clean.length,
         risk_score: risk.risk_score,
@@ -154,15 +153,12 @@ export async function POST(req: Request) {
       success: true,
       job_id: job.id,
       queued: clean.length,
-      held: jobStatus === 'held',
       scheduled_for: when.toISOString(),
       risk_score: risk.risk_score,
       risk_level: risk.risk_level,
       risk_action: risk.action,
       reasons: risk.reasons,
-      message: jobStatus === 'held'
-        ? 'Campaign held for review (elevated risk).'
-        : 'Campaign scheduled. Server will deliver at the chosen time.',
+      message: 'Campaign scheduled. Server will deliver at the chosen time.',
     }, { status: 200 })
 
   } catch (error: any) {
